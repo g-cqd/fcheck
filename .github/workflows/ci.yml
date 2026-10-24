@@ -1,0 +1,25 @@
+name: CI
+
+# The graph (lint, linux and macOS in parallel, one required gate) lives in the shared workflow; this file only
+# says what is specific to fcheck. A `v*` tag publishes the release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: Aemi-Studio/aemi/.github/workflows/swift-tool.yml@afc1be3d578045b381e76f6b1712a81b39956ced # aemi afc1be3
+    # The shared graph's `publish` job asks for contents: write; a caller must grant what a called job asks
+    # for, even when the job is skipped.
+    permissions:
+      contents: write
+    with:
+      tool: fcheck
+      lint-scripts: ""
+      self-analysis: ""
