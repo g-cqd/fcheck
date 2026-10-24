@@ -136,13 +136,12 @@ struct Analyze: AsyncParsableCommand {
     private func scopedFiles() throws -> Set<String>? {
         var entries = only
         if let onlyFrom {
-            let text: String
             if onlyFrom == "-" {
-                text = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+                while let line = readLine() { entries.append(line) }
             } else {
-                text = try String(contentsOfFile: onlyFrom, encoding: .utf8)
+                let text = try String(contentsOfFile: onlyFrom, encoding: .utf8)
+                entries += text.split(whereSeparator: \.isNewline).map(String.init)
             }
-            entries += text.split(whereSeparator: \.isNewline).map(String.init)
         }
         return entries.isEmpty && onlyFrom == nil ? nil : Set(entries.map(SourcePath.canonical))
     }
@@ -151,7 +150,7 @@ struct Analyze: AsyncParsableCommand {
         if let cachePath { return URL(fileURLWithPath: cachePath) }
         let base =
             ProcessInfo.processInfo.environment["XDG_CACHE_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil }
-            ?? NSHomeDirectory() + "/.cache"
+            ?? (ProcessInfo.processInfo.environment["HOME"] ?? "/tmp") + "/.cache"
         let key = RepositoryRoot.workspaceKey(from: FileManager.default.currentDirectoryPath)
         return URL(fileURLWithPath: base + "/\(ToolInfo.name)/\(key)/facts.json")
     }
