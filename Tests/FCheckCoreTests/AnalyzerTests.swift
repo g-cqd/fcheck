@@ -60,7 +60,7 @@ import Testing
         try await withCorpus(["B.swift": leaking, "A.swift": two]) { root in
             let report = try await Analyzer().analyze(paths: [root + "/B.swift", root + "/A.swift"], cacheURL: nil)
             #expect(
-                report.findings.map { "\(($0.path as NSString).lastPathComponent):\($0.line)" } == [
+                report.findings.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent):\($0.line)" } == [
                     "A.swift:2", "A.swift:6", "B.swift:2",
                 ])
         }
