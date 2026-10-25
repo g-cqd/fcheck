@@ -100,4 +100,22 @@ import Testing
                 "func f(_ n: Int) -> String {\n var a = [UInt8]()\n var b = [UInt8]()\n a = b\n b = a\n return String(decoding: a, as: UTF8.self)\n}"
             ).isEmpty)
     }
+
+    @Test func `dropFirst and dropLast with count and range subscripts are reported`() {
+        let code = """
+            func s1(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes.suffix(n), as: UTF8.self) }
+            func s2(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes.dropFirst(n), as: UTF8.self) }
+            func s3(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes[n...], as: UTF8.self) }
+            func s4(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes[..<n], as: UTF8.self) }
+            func s5(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes[...n], as: UTF8.self) }
+            func s6(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes[0 ..< n], as: UTF8.self) }
+            func s7(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes.prefix(upTo: n), as: UTF8.self) }
+            func s8(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes.dropLast(n), as: UTF8.self) }
+            func s9(_ bytes: [UInt8], _ n: Int) -> String { String(decoding: bytes.prefix(n), as: UTF8.self) }
+            """
+        let findings = cuts(code)
+        #expect(findings.count == 9)
+        let lines = findings.map(\.line).sorted()
+        #expect(lines == [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    }
 }

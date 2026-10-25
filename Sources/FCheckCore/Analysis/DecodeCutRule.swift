@@ -122,13 +122,48 @@ private final class CutScanner: SyntaxVisitor {
     /// chose, which is a boundary when it is a NUL or a newline, and `dropFirst` and `dropLast` usually remove a marker
     /// of known length, such as a byte-order mark.
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-        if operation == nil, let access = node.calledExpression.as(MemberAccessExprSyntax.self),
-            ["prefix", "suffix"].contains(access.declName.baseName.text),
-            node.trailingClosure == nil, let first = node.arguments.first, first.label?.text != "while"
-        {
-            operation = access.declName.baseName.text
+        if operation == nil, let access = node.calledExpression.as(MemberAccessExprSyntax.self) {
+            let name = access.declName.baseName.text
+            if ["prefix", "suffix"].contains(name),
+                node.trailingClosure == nil, let first = node.arguments.first, first.label?.text != "while"
+            {
+                operation = name
+            } else if ["dropFirst", "dropLast"].contains(name),
+                node.trailingClosure == nil, let first = node.arguments.first,
+                !first.expression.is(IntegerLiteralExprSyntax.self)
+            {
+                operation = name
+            }
         }
         return .visitChildren
+    }
+
+    override func visit(_ node: SubscriptCallExprSyntax) -> SyntaxVisitorContinueKind {
+        if operation == nil, let first = node.arguments.first?.expression, isCountSlice(first) {
+            operation = "subscript"
+        }
+        return .visitChildren
+    }
+
+    /// Whether an expression is a range cut at a byte count: `n...`, `..<n`, `...n`, `0..<n`, or `0...n`.
+    /// A two-sided range `s..<e` where `s` is not 0 is left alone (its bounds are usually where a scan stopped).
+    private func isCountSlice(_ expression: ExprSyntax) -> Bool {
+        if let postfix = expression.as(PostfixOperatorExprSyntax.self), postfix.operator.text == "..." {
+            return !postfix.expression.is(IntegerLiteralExprSyntax.self)
+        }
+        if let prefix = expression.as(PrefixOperatorExprSyntax.self), ["..<", "..."].contains(prefix.operator.text) {
+            return true
+        }
+        if let sequence = expression.as(SequenceExprSyntax.self) {
+            let elements = Array(sequence.elements)
+            if elements.count == 3,
+                let firstInt = elements[0].as(IntegerLiteralExprSyntax.self), firstInt.literal.text == "0",
+                let op = elements[1].as(BinaryOperatorExprSyntax.self)?.operator.text, ["..<", "..."].contains(op)
+            {
+                return true
+            }
+        }
+        return false
     }
 
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
