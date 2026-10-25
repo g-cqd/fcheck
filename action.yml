@@ -1,0 +1,119 @@
+name: "fcheck"
+description: "Checks that Swift code keeps its obligations on every path out of a function. Uploads SARIF to code scanning."
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  paths:
+    description: "Files or directories to analyze (whitespace-separated)"
+    required: false
+    default: "Sources"
+  only-from:
+    description: |
+      File of newline-separated paths to scope the report to — typically a pull
+      request's changed files. The whole corpus is still analyzed; only the
+      report is scoped.
+    required: false
+    default: ""
+  baseline:
+    description: "Baseline file: findings it contains are filtered out"
+    required: false
+    default: ""
+  config:
+    description: "Configuration file (default: ./.fcheck.json when present)"
+    required: false
+    default: ""
+  cache-path:
+    description: "Facts-cache file. Empty uses the default user cache; set a workspace path to cache between runs."
+    required: false
+    default: ""
+  strict:
+    description: "Fail on any finding, not just errors"
+    required: false
+    default: "false"
+  version:
+    description: "Release to download. Defaults to the ref this action was used at."
+    required: false
+    default: ""
+  upload-sarif:
+    description: "Upload the SARIF report to GitHub code scanning"
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve fcheck binary
+      id: resolve
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_PATH: ${{ github.action_path }}
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+        VERSION="${REQUESTED_VERSION:-${ACTION_REF#v}}"
+        case "${RUNNER_OS_NAME}-${RUNNER_ARCH_NAME}" in
+          macOS-ARM64) SLUG="macos-arm64" ;;
+          Linux-X64)   SLUG="linux-x86_64" ;;
+          *)           SLUG="" ;;
+        esac
+
+        if [ -n "$SLUG" ] && [ -n "$VERSION" ]; then
+          NAME="fcheck-${VERSION}-${SLUG}"
+          BASE="https://github.com/g-cqd/fcheck/releases/download/v${VERSION}"
+          if curl -fsSL --retry 3 -o "$NAME.tar.gz" "$BASE/$NAME.tar.gz" \
+            && curl -fsSL --retry 3 -o "$NAME.tar.gz.sha256" "$BASE/$NAME.tar.gz.sha256"; then
+            if command -v shasum >/dev/null; then
+              shasum -a 256 -c "$NAME.tar.gz.sha256"
+            else
+              sha256sum -c "$NAME.tar.gz.sha256"
+            fi
+            tar -xzf "$NAME.tar.gz"
+            ACTUAL="$("$PWD/$NAME/fcheck" --version 2>/dev/null || true)"
+            if [ "$ACTUAL" != "$VERSION" ]; then
+              echo "::error::fcheck binary reports '$ACTUAL' but v$VERSION was requested"
+              exit 1
+            fi
+            echo "bin=$PWD/$NAME/fcheck" >> "$GITHUB_OUTPUT"
+            rm -f "$NAME.tar.gz" "$NAME.tar.gz.sha256"
+            exit 0
+          fi
+          echo "::warning::no release asset for $NAME; falling back to a source build"
+        fi
+
+        swift build -c release --package-path "$ACTION_PATH"
+        echo "bin=$(swift build -c release --package-path "$ACTION_PATH" --show-bin-path)/fcheck" >> "$GITHUB_OUTPUT"
+
+    - name: Analyze
+      shell: bash
+      env:
+        BIN: ${{ steps.resolve.outputs.bin }}
+        PATHS: ${{ inputs.paths }}
+        ONLY_FROM: ${{ inputs.only-from }}
+        BASELINE: ${{ inputs.baseline }}
+        CONFIG: ${{ inputs.config }}
+        CACHE_PATH: ${{ inputs.cache-path }}
+        STRICT: ${{ inputs.strict }}
+      run: |
+        set -euo pipefail
+        args=()
+        [ "$STRICT" = "true" ] && args+=(--strict)
+        [ -n "$ONLY_FROM" ] && args+=(--only-from "$ONLY_FROM")
+        [ -n "$BASELINE" ] && args+=(--baseline "$BASELINE")
+        [ -n "$CONFIG" ] && args+=(--config "$CONFIG")
+        [ -n "$CACHE_PATH" ] && args+=(--cache-path "$CACHE_PATH")
+        read -r -d '' -a path_args <<< "$PATHS" || true
+        EXIT=0
+        "$BIN" analyze "${path_args[@]}" --format sarif --relative-to . "${args[@]}" > fcheck.sarif || EXIT=$?
+        [ -s fcheck.sarif ] || rm -f fcheck.sarif
+        exit "$EXIT"
+
+    - name: Upload SARIF
+      if: ${{ always() && inputs.upload-sarif == 'true' && hashFiles('fcheck.sarif') != '' }}
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: fcheck.sarif
