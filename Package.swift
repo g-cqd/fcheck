@@ -27,12 +27,12 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-system.git", from: "1.8.1"),
         .package(
             url: "https://github.com/g-cqd/AemiJSON.git",
-            revision: "ff380fad3d485619fb9aa4900021c34a7b40dcef"
+            revision: "5542d37ff0edb17c822b48fe69bff6e792354c57"
         ),
         // The corpus scan, the control-flow graph and the report support the analyzers share.
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "12abfbe2d76735534e1a9d4a51e61bfd0a45d4b6"
+            revision: "3d1f8114c156d692333e89337fc990016b639b8d"
         ),
     ],
     targets: [
