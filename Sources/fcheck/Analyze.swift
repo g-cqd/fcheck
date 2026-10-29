@@ -116,15 +116,11 @@ struct Analyze: AsyncParsableCommand {
     }
 
     private func loadConfiguration() throws -> Configuration {
-        var configuration: Configuration
-        if let config {
-            guard FileManager.default.fileExists(atPath: config) else {
-                throw Configuration.Failure.unreadable(path: config, reason: "no such file")
-            }
-            configuration = try Configuration.load(from: config)
-        } else {
-            configuration = try Configuration.load(from: FileManager.default.currentDirectoryPath + "/.fcheck.json")
-        }
+        // --config, or the configuration directory's shared and own files (ADR-0020).
+        let resolved = try Configuration.resolve(
+            explicit: config, currentDirectory: FileManager.default.currentDirectoryPath, analyzedPaths: paths)
+        // resolved.sources: --verbose prints them once fcheck adopts the shared output options (roadmap 0021).
+        var configuration = resolved.configuration
         if includeTests { configuration.includeTests = true }
         if let rules {
             let wanted = try rules.split(separator: ",").map { name -> RuleID in
