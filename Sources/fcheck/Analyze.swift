@@ -63,7 +63,7 @@ struct Analyze: AsyncParsableCommand {
             write("fcheck: no such file or directory: \(missing)\n", to: .standardError)
             throw ExitCode(64)
         }
-        let files = discover(paths)
+        let files = discover(paths, exclusion: configuration.pathFilter)
         guard !files.isEmpty else {
             write("fcheck: no Swift files under \(paths.joined(separator: ", "))\n", to: .standardError)
             throw ExitCode(64)
@@ -124,11 +124,16 @@ struct Analyze: AsyncParsableCommand {
         return configuration
     }
 
-    private func discover(_ paths: [String]) -> [String] {
+    /// The Swift files under `paths`; a walk prunes what `exclusion` leaves out (the analyzer filters again).
+    private func discover(_ paths: [String], exclusion: PathFilter) -> [String] {
         var files: [String] = []
         for path in paths {
             let type = (try? FileManager.default.attributesOfItem(atPath: path))?[.type] as? FileAttributeType
-            if type == .typeDirectory { files += SourceDiscovery.swiftFiles(under: path) } else { files.append(path) }
+            if type == .typeDirectory {
+                files += SourceDiscovery.swiftFiles(under: path, isExcluded: exclusion.excludes)
+            } else {
+                files.append(path)
+            }
         }
         return files
     }

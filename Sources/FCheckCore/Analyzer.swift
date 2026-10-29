@@ -43,9 +43,9 @@ public struct Analyzer: Sendable {
     public func analyze(paths: [String], cacheURL: URL?) async throws -> AnalysisReport {
         let configuration = configuration
         let identity = FactsCache<FileResult>.Identity.current(tool: ToolInfo.name, version: ToolInfo.version)
+        let exclusion = configuration.pathFilter
         let included = paths.filter { path in
-            !configuration.exclude.contains { path.contains($0) }
-                && (configuration.includeTests || !Self.isTestOrGenerated(path))
+            !exclusion.excludes(path) && (configuration.includeTests || !Self.isTestOrGenerated(path))
         }
         let scan = try await CorpusScanner.scan(
             paths: included, cacheURL: cacheURL, identity: identity, salt: configuration.salt
