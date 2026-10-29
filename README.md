@@ -26,12 +26,17 @@ fcheck explain replace-not-durable          # the obligation and the usual fix
 `--baseline FILE` and `--write-baseline FILE` adopt a rule on code that already breaks it; `--only FILE` and `--only-from`
 report one file of a corpus that is still analysed whole; `--relative-to DIR` shortens paths; `--cache-path` and
 `--no-cache` control the per-file cache, which is keyed by content, the configuration and the build of the tool. Flags,
-exit codes (`0`; `1` with `--strict` on a warning or error; `64` for usage) and the report schema are the ones arcleak,
-dolly and deadwood use.
+exit codes and the report schema are the ones arcleak, dolly and deadwood use: `0` passed; `1` an error finding, or with
+`--strict` a warning; `64` usage (a bad argument, a missing path, no Swift file); `70` no file could be read; `74` a
+`--write-baseline` file could not be written; `78` an invalid configuration or baseline. A note never fails a run.
 
 ## Configuration
 
-`.fcheck.json`, or `--config FILE`:
+Configuration is read from one directory: the current one if it holds `.swift-analyzers.json` or `.fcheck.json`, else the nearest directory holding one, up to the repository root. `.swift-analyzers.json` is shared by arcleak, deadwood, dolly and fcheck: its top level holds `exclude`, `includeRegions`, `excludeRegions`, `defines` and `platforms`, and a `"fcheck"` section holds fcheck's own keys. The shared top level, the section and `.fcheck.json` apply in that order: `exclude` lists add up, objects merge key by key, other values replace. An unknown key, or a key given twice, exits `78` and names the file and the key. `--config FILE` reads that one file instead, in the shared format when it is named `.swift-analyzers.json`.
+`includeRegions` containing `test` or `generated` (and not excluded) analyzes test and generated code, as
+`--include-tests` does.
+
+`.fcheck.json`, for example:
 
 ```json
 { "disable": ["cut-then-decode"],
