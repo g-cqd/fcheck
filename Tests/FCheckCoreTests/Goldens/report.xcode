@@ -1,0 +1,3 @@
+Goldens/Corpus/Cut.swift:2:5: warning: [cut-then-decode] `String(decoding:)` of bytes cut by `prefix` at line 2: a character that straddles the cut becomes U+FFFD
+Goldens/Corpus/Leak.swift:2:5: warning: [leak-on-exit] the file descriptor `d` acquired here is not closed, handed on or returned when the function throws at line 3
+Goldens/Corpus/Leak.swift:3:1: note: try work()

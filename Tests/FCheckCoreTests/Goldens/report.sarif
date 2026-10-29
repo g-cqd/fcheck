@@ -1,0 +1,205 @@
+{
+  "$schema" : "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs" : [
+    {
+      "columnKind" : "utf16CodeUnits",
+      "originalUriBaseIds" : {
+        "SRCROOT" : {
+          "uri" : "file:\/\/\/SRCROOT\/"
+        }
+      },
+      "results" : [
+        {
+          "codeFlows" : [
+            {
+              "threadFlows" : [
+                {
+                  "locations" : [
+                    {
+                      "location" : {
+                        "message" : {
+                          "text" : "data.prefix(16)"
+                        },
+                        "physicalLocation" : {
+                          "artifactLocation" : {
+                            "uri" : "Goldens/Corpus/Cut.swift",
+                            "uriBaseId" : "SRCROOT"
+                          },
+                          "region" : {
+                            "startLine" : 2
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location" : {
+                        "message" : {
+                          "text" : "String(decoding: data.prefix(16), as: UTF8.self)"
+                        },
+                        "physicalLocation" : {
+                          "artifactLocation" : {
+                            "uri" : "Goldens/Corpus/Cut.swift",
+                            "uriBaseId" : "SRCROOT"
+                          },
+                          "region" : {
+                            "startLine" : 2
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "level" : "warning",
+          "locations" : [
+            {
+              "physicalLocation" : {
+                "artifactLocation" : {
+                  "uri" : "Goldens/Corpus/Cut.swift",
+                  "uriBaseId" : "SRCROOT"
+                },
+                "region" : {
+                  "startColumn" : 5,
+                  "startLine" : 2
+                }
+              }
+            }
+          ],
+          "message" : {
+            "text" : "`String(decoding:)` of bytes cut by `prefix` at line 2: a character that straddles the cut becomes U+FFFD"
+          },
+          "partialFingerprints" : {
+            "fcheck/v1" : "36e8bdee281b92b-154"
+          },
+          "ruleId" : "cut-then-decode"
+        },
+        {
+          "codeFlows" : [
+            {
+              "threadFlows" : [
+                {
+                  "locations" : [
+                    {
+                      "location" : {
+                        "message" : {
+                          "text" : "let d = open(p, 0)"
+                        },
+                        "physicalLocation" : {
+                          "artifactLocation" : {
+                            "uri" : "Goldens/Corpus/Leak.swift",
+                            "uriBaseId" : "SRCROOT"
+                          },
+                          "region" : {
+                            "startLine" : 2
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "location" : {
+                        "message" : {
+                          "text" : "try work()"
+                        },
+                        "physicalLocation" : {
+                          "artifactLocation" : {
+                            "uri" : "Goldens/Corpus/Leak.swift",
+                            "uriBaseId" : "SRCROOT"
+                          },
+                          "region" : {
+                            "startLine" : 3
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "level" : "warning",
+          "locations" : [
+            {
+              "physicalLocation" : {
+                "artifactLocation" : {
+                  "uri" : "Goldens/Corpus/Leak.swift",
+                  "uriBaseId" : "SRCROOT"
+                },
+                "region" : {
+                  "startColumn" : 5,
+                  "startLine" : 2
+                }
+              }
+            }
+          ],
+          "message" : {
+            "text" : "the file descriptor `d` acquired here is not closed, handed on or returned when the function throws at line 3"
+          },
+          "partialFingerprints" : {
+            "fcheck/v1" : "f79af754af796e4b-158"
+          },
+          "ruleId" : "leak-on-exit"
+        }
+      ],
+      "tool" : {
+        "driver" : {
+          "informationUri" : "https://github.com/g-cqd/fcheck",
+          "name" : "fcheck",
+          "rules" : [
+            {
+              "defaultConfiguration" : {
+                "level" : "warning"
+              },
+              "fullDescription" : {
+                "text" : "When a function acquires a handle it must, on every path out (return, throw, end of body), close it, hand it to something that owns it, or return it. The paths include the ones a `try` takes when it throws and the ones a `defer` runs on.\n\nAcquisitions are `open`, `FileDescriptor.open`, `socket`, `dup`, `opendir`, `fopen` and the like, and any function of the corpus that returns one. Handing on is passing the handle to a call that is not a plain system call on it, storing it, or returning it. Add to the list in `.fcheck.json` under `resources`.\n\nFix: close it in a `defer` placed right after the acquisition, or close it in the branch that fails."
+              },
+              "id" : "leak-on-exit",
+              "properties" : {
+                "evidence" : "L0",
+                "shape" : "pairing"
+              },
+              "shortDescription" : {
+                "text" : "a descriptor or handle is not closed, handed on or returned on some path out of the function"
+              }
+            },
+            {
+              "defaultConfiguration" : {
+                "level" : "warning"
+              },
+              "fullDescription" : {
+                "text" : "Replacing a file atomically is four steps in an order: write the new bytes, flush them, rename over the old file, flush the directory. A rename of unflushed bytes can leave an empty or partial file after a crash. A rename not followed by a directory flush can bring the old file back, which matters most where the file holds a single-use token.\n\nA flush is `fsync`, `fdatasync`, `fcntl(_, F_FULLFSYNC)`, a `sync` method, or any call whose name contains `flush`. Add names under `flush` in `.fcheck.json`.\n\nFix: flush the descriptor before the rename, and the directory after it, or call the helper that does."
+              },
+              "id" : "replace-not-durable",
+              "properties" : {
+                "evidence" : "L0",
+                "shape" : "ordering"
+              },
+              "shortDescription" : {
+                "text" : "a rename replaces a file whose bytes, or whose directory, were not flushed"
+              }
+            },
+            {
+              "defaultConfiguration" : {
+                "level" : "warning"
+              },
+              "fullDescription" : {
+                "text" : "`String(decoding: bytes.prefix(n), as: UTF8.self)` replaces an incomplete character at the cut with U+FFFD, so valid text printed by a program is shown to a reader with replacement characters in it. The same holds for a suffix and for any slice whose bounds are counts of bytes.\n\nFix: move the cut back to a character boundary (a byte that is not `0b10xxxxxx`), or decode the whole buffer and cut the string."
+              },
+              "id" : "cut-then-decode",
+              "properties" : {
+                "evidence" : "L0",
+                "shape" : "bounds"
+              },
+              "shortDescription" : {
+                "text" : "bytes cut at a count are decoded as text, splitting a character that straddles the cut"
+              }
+            }
+          ],
+          "version" : "0.1.2"
+        }
+      }
+    }
+  ],
+  "version" : "2.1.0"
+}

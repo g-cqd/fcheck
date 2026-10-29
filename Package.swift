@@ -69,6 +69,7 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "ProjectModel", package: "analyzerkit"),
             ],
+            exclude: ["Goldens"],
             swiftSettings: strictSwiftSettings
         ),
     ],
