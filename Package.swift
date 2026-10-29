@@ -32,7 +32,7 @@ let package = Package(
         // The corpus scan, the control-flow graph and the report support the analyzers share.
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "27b767f421ee8d40e1080a808c3aedfabc8ee9f7"
+            revision: "1c7b8e2f21cd6d7267407b7812e88aaead77eee1"
         ),
     ],
     targets: [
@@ -59,6 +59,7 @@ let package = Package(
                 .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "SourceCorpus", package: "analyzerkit"),
                 .product(name: "ProjectModel", package: "analyzerkit"),
+                .product(name: "ReportSupport", package: "analyzerkit"),
             ],
             swiftSettings: strictSwiftSettings
         ),
