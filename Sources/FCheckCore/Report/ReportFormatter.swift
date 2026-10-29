@@ -36,10 +36,13 @@ public enum ReportFormatter {
         for finding in report.findings {
             let path = shown(finding.path, relativeTo)
             lines.append(
-                "\(path):\(finding.line):\(finding.column): \(finding.severity.rawValue): [\(finding.rule.rawValue)] \(finding.message)"
-            )
+                XcodeDiagnostic.line(
+                    path: path, line: finding.line, column: finding.column, severity: finding.severity.rawValue,
+                    rule: finding.rule.rawValue, message: finding.message))
             for step in finding.witness where step.line != finding.line {
-                lines.append("\(path):\(step.line):1: note: \(step.text)")
+                lines.append(
+                    XcodeDiagnostic.line(
+                        path: path, line: step.line, column: 1, severity: "note", rule: nil, message: step.text))
             }
         }
         return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
