@@ -24,6 +24,32 @@ import Testing
         #expect(found.witness.map(\.line) == [2, 3, 4])
     }
 
+    @Test func `a catch that binds the error catches every error, so nothing leaks on a throw it stops`() {
+        let found = leaks(
+            """
+            func f(_ p: String) throws {
+                let d = open(p, O_RDONLY)
+                do { try work() } catch let error { print(error) }
+                close(d)
+            }
+            """)
+        #expect(found.isEmpty, "\(found.map(\.message))")
+    }
+
+    @Test func `a for try await loop throws from its head, so a descriptor open across it leaks`() throws {
+        let found = try #require(
+            leaks(
+                """
+                func f(_ p: String, _ s: AsyncThrowingStream<Int, any Error>) async throws {
+                    let d = open(p, O_RDONLY)
+                    for try await x in s { print(x) }
+                    close(d)
+                }
+                """
+            ).first)
+        #expect(found.line == 2 && found.message.contains("throws at line 3"))
+    }
+
     @Test func `a defer that closes it covers every path`() {
         #expect(
             leaks(
