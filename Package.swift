@@ -32,7 +32,7 @@ let package = Package(
         // The corpus scan, the control-flow graph and the report support the analyzers share.
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "77b6b3ea071836df1f75178b868ca9229756dd02"
+            revision: "25040e7b967e2101c90fd17ca1f757bff9707cda"
         ),
     ],
     targets: [
