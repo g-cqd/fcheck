@@ -1,5 +1,6 @@
 internal import AemiJSON
 internal import ProjectModel
+internal import ReportSupport
 internal import SourceCorpus
 
 #if canImport(FoundationEssentials)
@@ -12,6 +13,11 @@ internal import SourceCorpus
 public struct Baseline: Codable, Sendable, Equatable {
     public var tool: String
     public var fingerprints: [String]
+
+    init(tool: String, fingerprints: [String]) {
+        self.tool = tool
+        self.fingerprints = fingerprints
+    }
 
     public init(findings: [Finding], root: String?) {
         tool = ToolInfo.name
@@ -26,7 +32,14 @@ public struct Baseline: Codable, Sendable, Equatable {
         do { data = try BoundedFileReader.readConfiguration(path: path) } catch {
             throw BaselineFailure(message: "cannot read baseline \(path): \(error)")
         }
-        do { return try AemiJSON.JSONDecoder().decode(Baseline.self, from: [UInt8](data)) } catch {
+        let file: BaselineFile
+        do { file = try AemiJSON.JSONDecoder().decode(BaselineFile.self, from: [UInt8](data)) } catch {
+            throw BaselineFailure(message: "invalid baseline \(path): \(error)")
+        }
+        do {
+            let valid = try file.validated(requiringVersion: false)
+            return Baseline(tool: valid.tool, fingerprints: valid.fingerprints)
+        } catch {
             throw BaselineFailure(message: "invalid baseline \(path): \(error)")
         }
     }
@@ -35,7 +48,8 @@ public struct Baseline: Codable, Sendable, Equatable {
         var encoder = AemiJSON.JSONEncoder()
         encoder.options.keyOrder = .sorted
         encoder.prettyPrinted = true
-        try Data(try encoder.encodeToBytes(self)).write(to: URL(fileURLWithPath: path), options: .atomic)
+        let file = BaselineFile(tool: tool, fingerprints: fingerprints, versioned: false)
+        try Data(try encoder.encodeToBytes(file)).write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
     /// The findings this baseline does not hold, and how many it did.
