@@ -60,9 +60,6 @@ public enum ReportFormatter {
     }
 
     private struct JSONReport: Encodable {
-        let schemaVersion = ReportSchema.version
-        let tool = ToolInfo.name
-        let version = ToolInfo.version
         let analyzedFileCount: Int
         let cacheHits: Int
         let cacheMisses: Int
@@ -89,6 +86,13 @@ public enum ReportFormatter {
         var encoder = AemiJSON.JSONEncoder()
         encoder.options.keyOrder = .sorted
         encoder.prettyPrinted = true
-        return String(decoding: try encoder.encodeToBytes(value), as: UTF8.self) + "\n"
+        // ADR-0017: schemaVersion, tool and version as before, from the shared envelope, with runNotes and skippedFiles.
+        let envelope = ReportEnvelope(
+            value, tool: ToolInfo.name, version: ToolInfo.version,
+            runNotes: report.cacheNote.map { [RunNote(code: "cache", severity: "note", message: $0)] } ?? [],
+            skippedFiles: report.degraded.keys.sorted().map {
+                SkippedFile(path: shown($0, relativeTo), reason: .degraded)
+            })
+        return String(decoding: try encoder.encodeToBytes(envelope), as: UTF8.self) + "\n"
     }
 }

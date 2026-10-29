@@ -1,6 +1,7 @@
 import ArgumentParser
 import FCheckCore
 import ProjectModel
+import ReportSupport
 import SourceCorpus
 import SystemPackage
 
@@ -169,7 +170,8 @@ struct Analyze: AsyncParsableCommand {
         let warnings = report.findings.filter { $0.severity == .warning }.count
         write(
             "fcheck: \(report.findings.count) finding(s) (\(errors) error(s), \(warnings) warning(s)) in "
-                + "\(report.analyzedFileCount) file(s); \(report.suppressed.count) suppressed, \(baselined) baselined; cache: "
+                + "\(report.analyzedFileCount) file(s)\(ReportSummary.notChecked(report.degraded.count)); "
+                + "\(report.suppressed.count) suppressed, \(baselined) baselined; cache: "
                 + "\(report.cacheHits) reused, \(report.cacheMisses) parsed\n", to: .standardError)
     }
 }
