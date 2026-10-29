@@ -103,6 +103,11 @@ public struct Configuration: Codable, Sendable, Equatable {
         }
     }
 
+    /// Whether `exclude` leaves `path` out: today, any entry it contains.
+    public func isExcluded(path: String) -> Bool {
+        exclude.contains { !$0.isEmpty && path.contains($0) }
+    }
+
     /// The configuration in the file at `path`; the default when there is no file.
     /// - Throws: a ``Failure`` for a file that cannot be read or parsed, so a typo never silently turns a rule off.
     public static func load(from path: String) throws(Failure) -> Configuration {
