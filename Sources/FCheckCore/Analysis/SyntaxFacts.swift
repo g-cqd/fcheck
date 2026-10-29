@@ -1,23 +1,60 @@
 import SwiftSyntax
 
 /// A call and what a rule asks about it.
+///
+/// The names are read from the called expression's tokens once, when the call is found, so a chain of calls costs one
+/// step per link. (They were the source text of the whole called expression, recomputed on every question: a SwiftUI
+/// chain re-read everything before each link, which grew with the square of its length.)
 struct CallSite {
     let node: FunctionCallExprSyntax
 
-    /// The callee as written, without spaces: `Darwin.open`, `descriptor.close`.
-    var callee: String { node.calledExpression.trimmedDescription.filter { !$0.isWhitespace } }
+    /// The callee when it is a dotted name, as written without spaces: `open`, `Darwin.open`, `descriptor.close`,
+    /// `.init`. Empty for any other called expression (a call's result, a subscript, a closure, `x?`), which no
+    /// configured name matches.
+    let callee: String
 
-    /// The part after the last `.`.
-    var last: String { callee.split(separator: ".").last.map(String.init) ?? callee }
+    /// The callee's last name: `close` in `descriptor.close`, and the member's name even when what precedes it is not a
+    /// dotted name (`close` in `make().close`). Empty when the called expression has no name.
+    let last: String
 
-    /// The part before the last `.`, empty for a bare call.
-    var base: String {
-        guard let dot = callee.lastIndex(of: ".") else { return "" }
-        return String(callee[..<dot])
+    /// The part of a dotted callee before its last name, empty for a bare call or when the callee is not dotted.
+    let base: String
+
+    init(node: FunctionCallExprSyntax) {
+        self.node = node
+        let called = node.calledExpression
+        if let names = Self.dottedNames(called) {
+            callee = names.joined(separator: ".")
+            last = names.last ?? ""
+            base = names.dropLast().joined(separator: ".")
+        } else {
+            callee = ""
+            last = called.as(MemberAccessExprSyntax.self)?.declName.baseName.text ?? ""
+            base = ""
+        }
     }
 
     var arguments: [(label: String?, expression: ExprSyntax)] {
         node.arguments.map { ($0.label?.text, $0.expression) }
+    }
+
+    /// `a.b.c` as `["a", "b", "c"]`, `.c` as `["", "c"]`, or nil when the expression is not made of names alone. It
+    /// stops at the first part that is not a name, so it never walks into the rest of a chain.
+    private static func dottedNames(_ expression: ExprSyntax) -> [String]? {
+        if let reference = expression.as(DeclReferenceExprSyntax.self) { return [reference.baseName.text] }
+        if expression.is(SuperExprSyntax.self) { return ["super"] }
+        if let specialized = expression.as(GenericSpecializationExprSyntax.self),
+            let reference = specialized.expression.as(DeclReferenceExprSyntax.self)
+        {
+            return [
+                reference.baseName.text
+                    + specialized.genericArgumentClause.trimmedDescription.filter { !$0.isWhitespace }
+            ]
+        }
+        guard let access = expression.as(MemberAccessExprSyntax.self) else { return nil }
+        let name = access.declName.baseName.text
+        guard let base = access.base else { return ["", name] }
+        return dottedNames(base).map { $0 + [name] }
     }
 }
 
