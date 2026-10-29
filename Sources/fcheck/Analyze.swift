@@ -1,3 +1,4 @@
+import AnalyzerCLI
 import ArgumentParser
 import FCheckCore
 import ProjectModel
@@ -56,18 +57,22 @@ struct Analyze: AsyncParsableCommand {
 
     func run() async throws {
         let configuration: Configuration
-        do { configuration = try loadConfiguration() } catch {
+        do { configuration = try loadConfiguration() } catch let failure as Configuration.Failure {
+            write("fcheck: \(failure)\n", to: .standardError)
+            throw ExitCode(ExitStatus.badConfiguration.rawValue)
+        } catch {
+            // A usage error, such as a `--rules` name no rule has.
             write("fcheck: \(error)\n", to: .standardError)
-            throw ExitCode(64)
+            throw ExitCode(ExitStatus.usage.rawValue)
         }
         if let missing = paths.first(where: { !FileManager.default.fileExists(atPath: $0) }) {
             write("fcheck: no such file or directory: \(missing)\n", to: .standardError)
-            throw ExitCode(64)
+            throw ExitCode(ExitStatus.usage.rawValue)
         }
         let files = discover(paths, exclusion: configuration.pathFilter)
         guard !files.isEmpty else {
             write("fcheck: no Swift files under \(paths.joined(separator: ", "))\n", to: .standardError)
-            throw ExitCode(64)
+            throw ExitCode(ExitStatus.usage.rawValue)
         }
 
         var report = try await Analyzer(configuration: configuration).analyze(
@@ -79,7 +84,10 @@ struct Analyze: AsyncParsableCommand {
         }
         var baselined = 0
         if let writeBaseline {
-            try Baseline(findings: report.findings, root: root).write(to: writeBaseline)
+            do { try Baseline(findings: report.findings, root: root).write(to: writeBaseline) } catch {
+                write("fcheck: cannot write baseline \(writeBaseline): \(error)\n", to: .standardError)
+                throw ExitCode(ExitStatus.outputFailure.rawValue)
+            }
             write(
                 "fcheck: wrote a baseline of \(report.findings.count) finding(s) to \(writeBaseline)\n",
                 to: .standardError)
@@ -89,7 +97,7 @@ struct Analyze: AsyncParsableCommand {
             let loaded: Baseline
             do { loaded = try Baseline.load(from: baseline) } catch {
                 write("fcheck: \(error)\n", to: .standardError)
-                throw ExitCode(64)
+                throw ExitCode(ExitStatus.badConfiguration.rawValue)
             }
             (report.findings, baselined) = loaded.filter(report.findings, root: root)
         }
@@ -99,7 +107,12 @@ struct Analyze: AsyncParsableCommand {
             try ReportFormatter.render(report, format: format, root: root, relativeTo: relative, baselined: baselined),
             to: .standardOutput)
         summarize(report, baselined: baselined)
-        if strict, report.findings.contains(where: { $0.severity >= .warning }) { throw ExitCode(1) }
+        // ADR-0018: an error fails the run, a warning only under --strict; reading no file at all is a failure too.
+        let status = RunOutcome.status(
+            severities: report.findings.map(\.severity), strict: strict,
+            analyzedFileCount: report.analyzedFileCount - report.degraded.count, skippedFileCount: report.degraded.count
+        )
+        if status != .success { throw ExitCode(status.rawValue) }
     }
 
     private func loadConfiguration() throws -> Configuration {
