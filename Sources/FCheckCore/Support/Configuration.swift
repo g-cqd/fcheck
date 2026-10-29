@@ -1,6 +1,6 @@
 internal import AemiJSON
 public import ProjectModel
-internal import SourceCorpus
+public import SourceCorpus
 
 #if canImport(FoundationEssentials)
     internal import FoundationEssentials
@@ -40,7 +40,12 @@ public struct Configuration: Codable, Sendable, Equatable {
     public var severity: [RuleID: Severity]
     public var resources: [Resource]
     public var flush: [String]
+    /// Paths to leave out (ADR-0008, shared by every tool): an entry without `*`, `?` or `[` is a substring of the
+    /// path; one with them is a glob relative to ``root``, `/` anchoring it there (`SourceCorpus.PathFilter`).
     public var exclude: [String]
+    /// The directory `exclude` globs are relative to: the configuration file's, set by ``load(from:)``. Not part of
+    /// the file.
+    public var root: String?
     /// Whether test and generated code is analyzed. By default it is not.
     public var includeTests: Bool
 
@@ -103,9 +108,12 @@ public struct Configuration: Codable, Sendable, Equatable {
         }
     }
 
-    /// Whether `exclude` leaves `path` out: today, any entry it contains.
+    /// `exclude` as one filter; build it once for many paths.
+    public var pathFilter: PathFilter { PathFilter(exclude, root: root) }
+
+    /// Whether `exclude` leaves `path` out; a trailing `/` asks about a directory.
     public func isExcluded(path: String) -> Bool {
-        exclude.contains { !$0.isEmpty && path.contains($0) }
+        pathFilter.excludes(path)
     }
 
     /// The configuration in the file at `path`; the default when there is no file.
@@ -122,7 +130,9 @@ public struct Configuration: Codable, Sendable, Equatable {
             throw .unreadable(path: path, reason: "\(error)")
         }
         do {
-            return try AemiJSON.JSONDecoder().decode(Configuration.self, from: [UInt8](data))
+            var configuration = try AemiJSON.JSONDecoder().decode(Configuration.self, from: [UInt8](data))
+            configuration.root = URL(fileURLWithPath: path).deletingLastPathComponent().path
+            return configuration
         } catch {
             throw .invalid(path: path, reason: "\(error)")
         }

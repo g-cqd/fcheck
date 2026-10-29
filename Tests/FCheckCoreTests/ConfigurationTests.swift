@@ -14,7 +14,11 @@ import Testing
 
     @Test func `no file is the default and an empty object is too`() throws {
         #expect(try load(nil) == .default)
-        #expect(try load("{}") == .default)
+        // A loaded file records where it lives, the root of its globs; its content is the default.
+        var empty = try load("{}")
+        #expect(empty.root == FileManager.default.temporaryDirectory.path.replacing(/\/$/, with: ""))
+        empty.root = nil
+        #expect(empty == .default)
     }
 
     @Test func `every field is read`() throws {
