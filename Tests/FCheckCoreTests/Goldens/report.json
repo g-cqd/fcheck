@@ -1,0 +1,57 @@
+{
+  "analyzedFileCount" : 4,
+  "baselined" : 0,
+  "cacheHits" : 0,
+  "cacheMisses" : 4,
+  "degradedFiles" : [],
+  "findings" : [
+    {
+      "column" : 5,
+      "evidence" : "L0",
+      "fingerprint" : "36e8bdee281b92b-154",
+      "function" : "cut(_:)",
+      "line" : 2,
+      "message" : "`String(decoding:)` of bytes cut by `prefix` at line 2: a character that straddles the cut becomes U+FFFD",
+      "path" : "Goldens/Corpus/Cut.swift",
+      "rule" : "cut-then-decode",
+      "severity" : "warning",
+      "shape" : "bounds",
+      "witness" : [
+        {
+          "line" : 2,
+          "text" : "data.prefix(16)"
+        },
+        {
+          "line" : 2,
+          "text" : "String(decoding: data.prefix(16), as: UTF8.self)"
+        }
+      ]
+    },
+    {
+      "column" : 5,
+      "evidence" : "L0",
+      "fingerprint" : "f79af754af796e4b-158",
+      "function" : "leaks(_:)",
+      "line" : 2,
+      "message" : "the file descriptor `d` acquired here is not closed, handed on or returned when the function throws at line 3",
+      "path" : "Goldens/Corpus/Leak.swift",
+      "rule" : "leak-on-exit",
+      "severity" : "warning",
+      "shape" : "pairing",
+      "witness" : [
+        {
+          "line" : 2,
+          "text" : "let d = open(p, 0)"
+        },
+        {
+          "line" : 3,
+          "text" : "try work()"
+        }
+      ]
+    }
+  ],
+  "schemaVersion" : 1,
+  "suppressed" : 1,
+  "tool" : "fcheck",
+  "version" : "0.1.2"
+}
