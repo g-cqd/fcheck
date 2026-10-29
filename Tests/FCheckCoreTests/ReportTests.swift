@@ -1,6 +1,7 @@
 import FCheckCore
 import Foundation
 import ProjectModel
+import SourceCorpus
 import Testing
 
 @Suite struct ReportTests {
@@ -64,6 +65,32 @@ import Testing
         #expect(result0["ruleId"] as? String == "leak-on-exit" && result0["level"] as? String == "warning")
         #expect((result0["codeFlows"] as? [[String: Any]])?.isEmpty == false)
         #expect((result0["partialFingerprints"] as? [String: String])?["fcheck/v1"] != nil)
+    }
+
+    /// Every location under `--relative-to` names its file relative to SRCROOT, as the other analyzers' do; an absolute
+    /// `file://` uri names the machine the run was on, and code scanning cannot link it (analyzerkit roadmap 0044).
+    @Test func `sarif locations under a relative-to directory are relative to SRCROOT`() async throws {
+        try await withCorpus(["Sources/T.swift": source]) { root in
+            let result = try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cacheURL: nil)
+            let text = try ReportFormatter.render(
+                result, format: .sarif, root: nil, relativeTo: SourcePath.canonical(root))
+            let log = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+            let finding = try #require(
+                ((log["runs"] as? [[String: Any]])?.first?["results"] as? [[String: Any]])?.first)
+            var locations = (finding["locations"] as? [[String: Any]]) ?? []
+            for flow in (finding["codeFlows"] as? [[String: Any]]) ?? [] {
+                for thread in (flow["threadFlows"] as? [[String: Any]]) ?? [] {
+                    for step in (thread["locations"] as? [[String: Any]]) ?? [] {
+                        if let location = step["location"] as? [String: Any] { locations.append(location) }
+                    }
+                }
+            }
+            let artifacts = locations.compactMap {
+                ($0["physicalLocation"] as? [String: Any])?["artifactLocation"] as? [String: String]
+            }
+            #expect(artifacts.count >= 2)
+            #expect(artifacts.allSatisfy { $0["uri"] == "Sources/T.swift" && $0["uriBaseId"] == "SRCROOT" })
+        }
     }
 
     @Test func `a baseline holds back what it has and passes what it does not`() async throws {
