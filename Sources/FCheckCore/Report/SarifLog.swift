@@ -1,6 +1,7 @@
 internal import AemiJSON
 internal import ProjectModel
 internal import ReportSupport
+internal import SourceCorpus
 
 /// A SARIF 2.1.0 log: one run, the rules, each finding with its witness as a code flow.
 enum SarifLog {
@@ -67,6 +68,8 @@ enum SarifLog {
     static func render(_ report: AnalysisReport, root: String?) throws -> String {
         var columns = SarifColumns(root: root, byteOrderMark: .parsed, readCap: 10 << 20)
         func location(_ path: String, line: Int, column: Int?, text: String?) -> Location {
+            // ArtifactURI and SarifColumns take the path as the report spells it: relative to `root` when inside it.
+            let path = root.map { RepositoryRoot.relativize(path, to: $0) } ?? path
             let (uri, base) = ArtifactURI.location(of: path, root: root)
             let converted = column.map { columns.column($0, line: line, path: path) }
             return Location(
