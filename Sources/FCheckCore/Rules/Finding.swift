@@ -46,10 +46,15 @@ public struct FileResult: Codable, Sendable, Equatable {
     public var acquirers: [String]
     /// The suppression directives found in the file.
     public var directives: [Directive]
+    /// Why the file was not analysed, when its syntax tree nests too deeply to walk (analyzerkit roadmap 0041).
+    public var degraded: String?
 
-    public init(findings: [Finding] = [], acquirers: [String] = [], directives: [Directive] = []) {
+    public init(
+        findings: [Finding] = [], acquirers: [String] = [], directives: [Directive] = [], degraded: String? = nil
+    ) {
         self.findings = findings
         self.acquirers = acquirers
         self.directives = directives
+        self.degraded = degraded
     }
 }

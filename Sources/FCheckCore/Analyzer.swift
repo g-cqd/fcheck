@@ -59,7 +59,7 @@ public struct Analyzer: Sendable {
         report.cacheHits = scan.cacheHits
         report.cacheNote = scan.cacheLoadFailure
         for file in scan.files {
-            if let reason = file.failure {
+            if let reason = file.failure ?? file.facts?.degraded {
                 report.degraded[file.path] = reason
             } else if let facts = file.facts {
                 results[file.path] = facts
@@ -72,7 +72,8 @@ public struct Analyzer: Sendable {
                 guard let bytes = try? BoundedFileReader.read(path: path, cap: BoundedFileReader.sourceByteCap),
                     Self.mentions(bytes, any: acquirers)
                 else { continue }
-                let again = analyze(bytes: bytes, path: path, acquirers: acquirers)
+                // The second pass parses again, so it needs the large stack as much as the first (roadmap 0041).
+                let again = await LargeStack.run { [self] in analyze(bytes: bytes, path: path, acquirers: acquirers) }
                 var merged = results[path] ?? again
                 merged.findings =
                     merged.findings.filter { $0.rule != .leakOnExit } + again.findings.filter { $0.rule == .leakOnExit }
@@ -106,6 +107,10 @@ public struct Analyzer: Sendable {
     ///   - acquirers: simple names of corpus functions that return a handle, which `leak-on-exit` treats as acquiring.
     public func analyze(bytes: [UInt8], path: String, acquirers: Set<String>) -> FileResult {
         let tree = Parser.parse(source: String(decoding: bytes, as: UTF8.self))
+        // Every walk below recurses once per level of the tree; past the limit the file is listed, not walked.
+        if SyntaxDepth.exceeds(tree) {
+            return FileResult(degraded: "nested deeper than \(SyntaxDepth.defaultLimit) levels; not analysed")
+        }
         let converter = SourceLocationConverter(fileName: path, tree: tree)
         let (units, definitions, declared) = UnitCollector.collect(tree, converter: converter, path: path)
         var result = FileResult(directives: Directive.scan(tree, converter: converter))
