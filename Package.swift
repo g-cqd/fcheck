@@ -32,7 +32,7 @@ let package = Package(
         // The corpus scan, the control-flow graph and the report support the analyzers share.
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "801daebd3ff54146848de12b6241079f429232f6"
+            revision: "01ebd2e7b67b76117ca30e785927fd09c32a7102"
         ),
     ],
     targets: [
@@ -43,6 +43,7 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "AemiJSON", package: "AemiJSON"),
                 .product(name: "ProjectModel", package: "analyzerkit"),
+                .product(name: "AnalyzerConfiguration", package: "analyzerkit"),
                 .product(name: "SourceCorpus", package: "analyzerkit"),
                 .product(name: "Suppression", package: "analyzerkit"),
                 .product(name: "CorpusScan", package: "analyzerkit"),

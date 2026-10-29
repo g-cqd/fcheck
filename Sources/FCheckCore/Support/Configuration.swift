@@ -1,4 +1,5 @@
 internal import AemiJSON
+public import AnalyzerConfiguration
 public import ProjectModel
 public import SourceCorpus
 
@@ -81,8 +82,25 @@ public struct Configuration: Codable, Sendable, Equatable {
         resources = try values.decodeIfPresent([Resource].self, forKey: .resources) ?? []
         flush = try values.decodeIfPresent([String].self, forKey: .flush) ?? []
         exclude = try values.decodeIfPresent([String].self, forKey: .exclude) ?? []
-        includeTests = try values.decodeIfPresent(Bool.self, forKey: .includeTests) ?? false
+        // ADR-0020 item 6: the shared region lists reach fcheck's one switch for test and generated code.
+        let regions = try decoder.container(keyedBy: RegionKeys.self)
+        let included = try regions.decodeIfPresent(String.self, forKey: .includeRegions)
+        let excluded = try regions.decodeIfPresent(String.self, forKey: .excludeRegions)
+        var fromRegions: Bool?
+        if included != nil || excluded != nil {
+            do {
+                let selection = try RegionSelection(include: included, exclude: excluded)
+                fromRegions = selection.isIncluded(.test) || selection.isIncluded(.generated)
+            } catch {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .includeRegions, in: regions, debugDescription: error.description)
+            }
+        }
+        includeTests = try values.decodeIfPresent(Bool.self, forKey: .includeTests) ?? fromRegions ?? false
     }
+
+    /// The shared keys fcheck reads through `includeTests` rather than storing.
+    private enum RegionKeys: String, CodingKey { case includeRegions, excludeRegions }
 
     public func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
@@ -118,24 +136,44 @@ public struct Configuration: Codable, Sendable, Equatable {
 
     /// The configuration in the file at `path`; the default when there is no file.
     /// - Throws: a ``Failure`` for a file that cannot be read or parsed, so a typo never silently turns a rule off.
+    /// What the shared configuration reader checks fcheck's keys against (ADR-0020); the shared keys are its own.
+    public static let sharedReading = SharedConfiguration.Tool(
+        name: ToolInfo.name, fileName: ".fcheck.json",
+        keys: ["disable", "severity", "resources", "flush", "includeTests"])
+
+    /// The configuration of a run (ADR-0020): `explicit` (`--config`) or the configuration directory's
+    /// `.swift-analyzers.json` and `.fcheck.json`, merged, every key checked; the default when there is none.
+    /// - Throws: a ``Failure``, so a typo never silently turns a rule off.
+    public static func resolve(
+        explicit: String?, currentDirectory: String, analyzedPaths: [String]
+    ) throws(Failure) -> (configuration: Configuration, sources: SharedConfiguration.Resolved) {
+        let resolved: SharedConfiguration.Resolved
+        do {
+            resolved = try SharedConfiguration.resolve(
+                for: sharedReading, explicit: explicit, currentDirectory: currentDirectory, analyzedPaths: analyzedPaths
+            )
+        } catch .unreadable(let path, let reason) {
+            throw .unreadable(path: path, reason: reason)
+        } catch {
+            throw .invalid(path: error.path, reason: error.reason)
+        }
+        guard let directory = resolved.directory, let last = resolved.sources.last else { return (.default, resolved) }
+        do {
+            var configuration = try AemiJSON.JSONDecoder().decode(Configuration.self, from: resolved.json)
+            configuration.root = directory
+            return (configuration, resolved)
+        } catch {
+            throw .invalid(path: last.path, reason: "\(error)")
+        }
+    }
+
+    /// The configuration in the file at `path`; the default when there is no file.
+    /// - Throws: a ``Failure`` for a file that cannot be read or parsed, so a typo never silently turns a rule off.
     public static func load(from path: String) throws(Failure) -> Configuration {
-        let data: Data
-        do {
-            data = try BoundedFileReader.readConfiguration(path: path)
-        } catch .unreadable(let reason)
-            where reason == "not a regular file" && !FileManager.default.fileExists(atPath: path)
-        {
-            return .default
-        } catch {
-            throw .unreadable(path: path, reason: "\(error)")
-        }
-        do {
-            var configuration = try AemiJSON.JSONDecoder().decode(Configuration.self, from: [UInt8](data))
-            configuration.root = URL(fileURLWithPath: path).deletingLastPathComponent().path
-            return configuration
-        } catch {
-            throw .invalid(path: path, reason: "\(error)")
-        }
+        guard FileManager.default.fileExists(atPath: path) else { return .default }
+        return try resolve(
+            explicit: path, currentDirectory: FileManager.default.currentDirectoryPath, analyzedPaths: []
+        ).configuration
     }
 
     /// What the cache's facts depend on: any change here invalidates every entry. Which rules are reported does not
