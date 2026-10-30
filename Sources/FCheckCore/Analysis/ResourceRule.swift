@@ -14,10 +14,40 @@ struct ResourceRule {
         let label: String
         /// Callee texts that acquire, matched whole.
         let acquire: Set<String>
-        /// Simple names of corpus functions that return a handle they acquired.
-        let acquireByName: Set<String>
+        /// Corpus functions that return a handle they acquired, by simple name.
+        let acquireByName: [String: [Acquirer]]
         let release: Set<String>
         let releaseMethods: Set<String>
+    }
+
+    /// A corpus function that returns a handle it acquired, from its ``FunctionUnit/acquirerKey``.
+    struct Acquirer: Equatable {
+        /// The enclosing type, nil outside a type or when the key gave none.
+        let type: String?
+        let arity: ClosedRange<Int>
+
+        /// `Type.name#required-total`, `name#required-total`, or a bare name, which matches any call of that name.
+        static func parse(_ key: String) -> (name: String, acquirer: Acquirer) {
+            guard let hash = key.lastIndex(of: "#") else { return (key, Acquirer(type: nil, arity: 0...Int.max)) }
+            let qualified = key[..<hash]
+            let bounds = key[key.index(after: hash)...].split(separator: "-").compactMap { Int($0) }
+            let arity = bounds.count == 2 && bounds[0] <= bounds[1] ? bounds[0]...bounds[1] : 0...Int.max
+            guard let dot = qualified.lastIndex(of: ".") else {
+                return (String(qualified), Acquirer(type: "", arity: arity))
+            }
+            return (
+                String(qualified[qualified.index(after: dot)...]),
+                Acquirer(type: String(qualified[..<dot]), arity: arity)
+            )
+        }
+
+        /// Whether a call with `count` arguments on a base of type `base` (nil when unknown) can be this function.
+        /// A type is required to match only when both are known; a free function (`type == ""`) is never a method.
+        func accepts(count: Int, base: String?) -> Bool {
+            guard arity.contains(count) else { return false }
+            guard let base, let type else { return true }
+            return !type.isEmpty && TypeScope.lastComponent(type) == TypeScope.lastComponent(base)
+        }
     }
 
     /// A held handle: where it was acquired, under what name.
@@ -43,8 +73,15 @@ struct ResourceRule {
         "log", "print", "dump", "describe", "trace", "debug", "is", "has", "lock", "unlock",
     ]
 
+    /// The name is in ``nonOwning`` or starts with a prefix at a camel-case boundary: `logState` and `isValid` do, `login`
+    /// and `issue` do not (roadmap 0025, F3).
     static func isNonOwning(_ name: String) -> Bool {
-        nonOwning.contains(name) || nonOwningPrefixes.contains { name.hasPrefix($0) }
+        if nonOwning.contains(name) { return true }
+        return nonOwningPrefixes.contains { prefix in
+            guard name.hasPrefix(prefix) else { return false }
+            guard let next = name.dropFirst(prefix.count).first else { return true }
+            return next.isUppercase || next.isNumber || next == "_"
+        }
     }
 
     static let defaults: [Configuration.Resource] = [
@@ -78,6 +115,8 @@ struct ResourceRule {
 
     let kinds: [Kind]
     let declared: Set<String>
+    /// The types of the names in the function being analysed.
+    private var scope = TypeScope()
     let severity: Severity
     let negativeIsInvalid: Set<String>
 
@@ -92,10 +131,15 @@ struct ResourceRule {
                 Configuration.Resource(
                     label: "handle", acquire: [], release: ["close", "Darwin.close", "Glibc.close"]))
         }
+        var byName: [String: [Acquirer]] = [:]
+        for key in acquirers.sorted() {
+            let (name, acquirer) = Acquirer.parse(key)
+            byName[name, default: []].append(acquirer)
+        }
         kinds = all.enumerated().map { index, resource in
             Kind(
                 label: resource.label, acquire: Set(resource.acquire),
-                acquireByName: index == all.count - 1 && !acquirers.isEmpty ? acquirers : [],
+                acquireByName: index == all.count - 1 && !acquirers.isEmpty ? byName : [:],
                 release: Set(resource.release),
                 releaseMethods: Set(resource.release.map { $0.split(separator: ".").last.map(String.init) ?? $0 }))
         }
@@ -106,6 +150,12 @@ struct ResourceRule {
     // MARK: - Analysis
 
     func analyze(_ unit: FunctionUnit) -> Outcome {
+        var scoped = self
+        scoped.scope = TypeScope(unit)
+        return scoped.analyzeInScope(unit)
+    }
+
+    private func analyzeInScope(_ unit: FunctionUnit) -> Outcome {
         guard CallFinder.calls(in: unit.statements).contains(where: { acquiredKind(of: $0) != nil }) else {
             return Outcome()
         }
@@ -123,7 +173,33 @@ struct ResourceRule {
                 outcome.findings.append(finding(for: leaked, exit: exit, graph: graph, states: states, unit: unit))
             }
         }
-        outcome.returnsHandle = graph.nodes.contains { node in
+        // Acquiring into a name that still holds a handle loses the first one (F2); a path to an exit was reported above.
+        for node in graph.nodes where !infos[node.id].acquisitions.isEmpty {
+            guard let entry = states[node.id] else { continue }
+            let gone = infos[node.id].released.union(infos[node.id].transferred)
+            for acquisition in infos[node.id].acquisitions where !acquisition.viaBinding {
+                for lost in entry.sorted(by: { $0.site < $1.site })
+                where lost.name == acquisition.name && lost.site != node.id && !gone.contains(lost.name)
+                    && reported.insert(lost.site).inserted
+                {
+                    outcome.findings.append(
+                        finding(for: lost, exit: node.id, graph: graph, states: states, unit: unit, reassigned: true))
+                }
+            }
+        }
+        outcome.returnsHandle = returnsHandle(graph, states: states, unit: unit)
+        return outcome
+    }
+
+    /// A `return` of a held name or of an acquiring call, or a body that is one acquiring expression (F1b).
+    private func returnsHandle(_ graph: ControlFlowGraph, states: [Set<Held>?], unit: FunctionUnit) -> Bool {
+        if unit.statements.count == 1, case .expr(let value)? = unit.statements.first?.item,
+            let call = SyntaxFacts.stripped(value).as(FunctionCallExprSyntax.self),
+            acquiredKind(of: CallSite(node: call)) != nil
+        {
+            return true
+        }
+        return graph.nodes.contains { node in
             guard let value = (node.syntax?.as(ReturnStmtSyntax.self))?.expression else { return false }
             if let name = SyntaxFacts.bareName(value) {
                 return states[node.id]?.contains(where: { $0.name == name }) == true
@@ -131,7 +207,6 @@ struct ResourceRule {
             guard let call = SyntaxFacts.stripped(value).as(FunctionCallExprSyntax.self) else { return false }
             return acquiredKind(of: CallSite(node: call)) != nil
         }
-        return outcome
     }
 
     /// Exits in the order a leak is reported by: a throw first, since it is the path nobody wrote a close on.
@@ -236,7 +311,13 @@ struct ResourceRule {
 
     fileprivate func acquiredKind(of call: CallSite) -> Int? {
         for (index, kind) in kinds.enumerated() {
-            if kind.acquireByName.contains(call.last) { return index }
+            if let candidates = kind.acquireByName[call.last] {
+                let count =
+                    call.arguments.count + (call.node.trailingClosure == nil ? 0 : 1)
+                    + call.node.additionalTrailingClosures.count
+                let base = scope.type(of: call.base)
+                if candidates.contains(where: { $0.accepts(count: count, base: base) }) { return index }
+            }
             guard kind.acquire.contains(call.callee) else { continue }
             if isLocalMethod(call) || call.arguments.count < (Self.minimumArguments[call.last] ?? 0) { continue }
             return index
@@ -300,7 +381,8 @@ struct ResourceRule {
     // MARK: - Reporting
 
     private func finding(
-        for leaked: Held, exit: Int, graph: ControlFlowGraph, states: [Set<Held>?], unit: FunctionUnit
+        for leaked: Held, exit: Int, graph: ControlFlowGraph, states: [Set<Held>?], unit: FunctionUnit,
+        reassigned: Bool = false
     ) -> Finding {
         let site = graph.nodes[leaked.site]
         // Leave the acquiring statement by an edge that completes it: its own throw edge is the one on which nothing was acquired.
@@ -319,6 +401,7 @@ struct ResourceRule {
         let lastNode = route.dropLast().last.map { graph.nodes[$0] }
         let how: String
         switch graph.nodes[exit].kind {
+        case _ where reassigned: how = "is reassigned at line \(graph.nodes[exit].line)"
         case .exit(.threw): how = "throws at line \(lastNode?.line ?? 0)"
         case .exit(.returned): how = "returns at line \(lastNode?.line ?? 0)"
         default: how = "reaches its end"
@@ -329,7 +412,8 @@ struct ResourceRule {
             column: site.syntax.map(unit.column(of:)) ?? 1,
             function: unit.name,
             message:
-                "the \(label) `\(leaked.name)` acquired here is not closed, handed on or returned when the function \(how)",
+                "the \(label) `\(leaked.name)` acquired here is not closed, handed on or returned when "
+                + (reassigned ? "it \(how)" : "the function \(how)"),
             witness: steps)
     }
 

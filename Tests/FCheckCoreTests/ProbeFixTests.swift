@@ -82,7 +82,7 @@ import Testing
         for flush in [
             "let dir = open(folder, O_RDONLY | O_DIRECTORY)\n    fsync(dir)\n    close(dir)",
             "let dir = open(url.deletingLastPathComponent().path, O_RDONLY)\n    fsync(dir)\n    close(dir)",
-            "try flushDirectory(of: path)", "syncParentDirectory(path)",
+            "try flushDirectory(of: path)", "syncParentDirectory(path)", "_ = flush(directory)", "parentDir.sync()",
         ] {
             let found = durability(
                 "import Darwin\nfunc save(_ fd: Int32) throws {\n    write(fd, \"x\", 1)\n    fsync(fd)\n"

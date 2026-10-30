@@ -62,7 +62,7 @@ public struct Analyzer: Sendable {
         }
         let classified = ContinuousClock.now
         let scan = try await CorpusScanner.scan(
-            paths: included, cache: cache, identity: identity, salt: configuration.salt
+            paths: included, cache: cache, identity: identity, salt: configuration.salt + Self.factsFormat
         ) { path, bytes in
             Analyzer(configuration: configuration)
                 .analyze(bytes: bytes, path: path, acquirers: [], classification: classification)
@@ -88,20 +88,7 @@ public struct Analyzer: Sendable {
             }
         }
 
-        let acquirers = Set(results.values.flatMap(\.acquirers))
-        if !acquirers.isEmpty {
-            for path in results.keys.sorted() {
-                guard let bytes = try? BoundedFileReader.read(path: path, cap: BoundedFileReader.sourceByteCap),
-                    Self.mentions(bytes, any: acquirers)
-                else { continue }
-                // The second pass parses again, so it needs the large stack as much as the first (roadmap 0041).
-                let again = await LargeStack.run { [self] in analyze(bytes: bytes, path: path, acquirers: acquirers) }
-                var merged = results[path] ?? again
-                merged.findings =
-                    merged.findings.filter { $0.rule != .leakOnExit } + again.findings.filter { $0.rule == .leakOnExit }
-                results[path] = merged
-            }
-        }
+        try await secondPass(&results, cache: cache, identity: identity)
 
         var kept: [Finding] = []
         for (path, result) in results {
@@ -131,6 +118,62 @@ public struct Analyzer: Sendable {
     ///   - bytes: the file's UTF-8 text.
     ///   - path: how findings name it.
     ///   - acquirers: simple names of corpus functions that return a handle, which `leak-on-exit` treats as acquiring.
+    /// Corpus acquirers to a fixed point (roadmap 0025, F1): each round reruns, in parallel and through the cache, the
+    /// files that call a name that became an acquirer, with every acquirer known so far; what those files return
+    /// makes the next round's acquirers. A file's leak findings are those of the last round it ran in.
+    ///
+    /// Each round has its own cache workspace and the acquirers' digest as its salt, so a warm run that finds the same
+    /// acquirers reads every round from the cache.
+    private func secondPass(_ results: inout [String: FileResult], cache: CacheLocation?, identity: CacheIdentity?)
+        async throws
+    {
+        let configuration = configuration
+        var latest = results.mapValues(\.acquirers)
+        var acquirers = Set(latest.values.joined())
+        let called = results.mapValues { Set($0.calledNames) }
+        var ranWith: [String: Set<String>] = [:]
+        var round = 0
+        while !acquirers.isEmpty, round < Self.maximumRounds {
+            let names = Set(acquirers.map { ResourceRule.Acquirer.parse($0).name })
+            let relevant: (String) -> Set<String> = { path in
+                let calls = called[path] ?? []
+                return acquirers.filter { calls.contains(ResourceRule.Acquirer.parse($0).name) }
+            }
+            let rerun = called.keys.filter { path in
+                guard called[path]?.contains(where: names.contains) == true else { return false }
+                return relevant(path) != (ranWith[path] ?? [])
+            }.sorted()
+            if rerun.isEmpty { break }
+            let known = acquirers
+            let location = cache.map {
+                CacheLocation(
+                    root: $0.root, workspace: $0.workspace + "#acquirers-\(round)", maximumBytes: $0.maximumBytes)
+            }
+            let salt =
+                configuration.salt + "|" + ContentFingerprint.of(Array(known.sorted().joined(separator: "\n").utf8))
+            let scan = try await CorpusScanner.scan(paths: rerun, cache: location, identity: identity, salt: salt) {
+                path, bytes in
+                Analyzer(configuration: configuration).analyze(bytes: bytes, path: path, acquirers: known)
+            }
+            for file in scan.files {
+                guard let again = file.facts, again.degraded == nil, var merged = results[file.path] else { continue }
+                ranWith[file.path] = relevant(file.path)
+                merged.findings =
+                    merged.findings.filter { $0.rule != .leakOnExit } + again.findings.filter { $0.rule == .leakOnExit }
+                results[file.path] = merged
+                latest[file.path] = again.acquirers
+            }
+            acquirers = Set(latest.values.joined())
+            round += 1
+        }
+    }
+
+    /// The cached facts' shape: acquirer keys with arity and type, and the called names (roadmap 0025).
+    static let factsFormat = "|facts-2"
+
+    /// A bound on the rounds, which only a chain of wrappers this deep reaches.
+    static let maximumRounds = 16
+
     public func analyze(
         bytes: [UInt8], path: String, acquirers: Set<String>, classification: ProjectClassification? = nil
     ) -> FileResult {
@@ -153,11 +196,12 @@ public struct Analyzer: Sendable {
         for unit in units {
             let outcome = leaks.analyze(unit)
             result.findings += outcome.findings
-            if outcome.returnsHandle { returning.insert(unit.simpleName) }
+            if outcome.returnsHandle { returning.insert(unit.acquirerKey) }
             result.findings += durability.analyze(unit)
             result.findings += decodes.analyze(unit, definitions: definitions)
         }
         result.acquirers = returning.sorted()
+        result.calledNames = CalledNames.of(tree)
         return result
     }
 
@@ -166,8 +210,4 @@ public struct Analyzer: Sendable {
         return Double(seconds) + Double(attoseconds) / 1e18
     }
 
-    private static func mentions(_ bytes: [UInt8], any names: Set<String>) -> Bool {
-        let text = String(decoding: bytes, as: UTF8.self)
-        return names.contains { text.contains($0) }
-    }
 }
