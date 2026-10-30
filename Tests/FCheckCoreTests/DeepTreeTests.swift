@@ -15,7 +15,7 @@ import Testing
         {
             root in
             let paths = ["Deep.swift", "Deeper.swift", "Leak.swift"].map { root + "/" + $0 }
-            let report = try await Analyzer().analyze(paths: paths, cacheURL: nil)
+            let report = try await Analyzer().analyze(paths: paths, cache: nil)
             #expect(report.findings.map(\.rule) == [.leakOnExit], "the ordinary file is still analysed")
             #expect(report.degraded.keys.map { ($0 as NSString).lastPathComponent } == ["Deeper.swift"])
             #expect(report.degraded.values.first?.contains("nested") == true)

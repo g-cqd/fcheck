@@ -1,0 +1,59 @@
+OVERVIEW: Analyze Swift files or directories (default: the current directory).
+
+USAGE: fcheck analyze [<options>] [<paths> ...]
+
+INPUT:
+  <paths>                 Swift files or directories to analyze. (default: .)
+  --config <file>         Configuration file (default: the tool's configuration
+                          file in the current directory, when present).
+  --exclude-path <pattern>
+                          Leave out the paths matching this pattern
+                          (repeatable): a substring, or a glob with *, ? or [.
+  --include-regions <list>
+                          Regions to treat as first-class code:
+                          preview,debug,test,mock,generated,script, or all.
+  --exclude-regions <list>
+                          Regions to keep out of scope, even under
+                          --include-regions all.
+  --define <name>         An #if condition to treat as set (repeatable; the
+                          compiler's -D).
+  --only <file>           Report only findings in this file (repeatable); the
+                          whole corpus is still analyzed.
+  --only-from <file>      Read --only paths from a file, one per line ('-'
+                          reads stdin).
+
+OUTPUT:
+  --format <format>       Output format: xcode (build-log diagnostics), json,
+                          or sarif. (values: xcode, json, sarif; default: xcode)
+  --relative-to <directory>
+                          Report paths relative to this directory (use
+                          `--relative-to .` in CI).
+  --strict                Fail on warnings as well as errors; notes never fail
+                          a run.
+  --baseline <file>       Baseline file: findings whose fingerprints it holds
+                          are left out.
+  --write-baseline <file> Write the current findings as a baseline to this
+                          file, then exit 0.
+  --report-new-since <file>
+                          The base branch's baseline file: findings outside
+                          --only that it does not hold are reported as new.
+  --verbose               Say more on stderr: every path of a note, and why a
+                          capability was or was not used.
+  --quiet                 Print nothing on stderr but errors.
+  --timings               Add the time each phase took to the report and to
+                          stderr.
+
+RULES:
+  --rules <list>          Only these rules, comma-separated (see the `rules`
+                          subcommand).
+
+CACHE:
+  --cache-path <directory>
+                          The facts cache's root directory (default: the tool's
+                          directory in the user cache directory).
+  --no-cache              Do not read or write the facts cache.
+
+OPTIONS:
+  --version               Show the version.
+  -h, --help              Show help information.
+

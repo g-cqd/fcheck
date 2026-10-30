@@ -9,7 +9,7 @@ import Testing
 
     private func report() async throws -> (AnalysisReport, String) {
         try await withCorpus(["Sources/T.swift": source]) { root in
-            (try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cacheURL: nil), root)
+            (try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cache: nil), root)
         }
     }
 
@@ -42,7 +42,7 @@ import Testing
             first["rule"] as? String == "leak-on-exit" && first["evidence"] as? String == "L0"
                 && first["shape"] as? String == "pairing")
         let moved = try await withCorpus(["Sources/T.swift": source]) { other in
-            try await Analyzer().analyze(paths: [other + "/Sources/T.swift"], cacheURL: nil)
+            try await Analyzer().analyze(paths: [other + "/Sources/T.swift"], cache: nil)
         }
         // Outside a repository the path is part of the fingerprint; with a root they agree.
         #expect(
@@ -71,7 +71,7 @@ import Testing
     /// `file://` uri names the machine the run was on, and code scanning cannot link it (analyzerkit roadmap 0044).
     @Test func `sarif locations under a relative-to directory are relative to SRCROOT`() async throws {
         try await withCorpus(["Sources/T.swift": source]) { root in
-            let result = try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cacheURL: nil)
+            let result = try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cache: nil)
             let text = try ReportFormatter.render(
                 result, format: .sarif, root: nil, relativeTo: SourcePath.canonical(root))
             let log = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
@@ -116,7 +116,7 @@ import Testing
     @Test func `the fingerprint ignores the line, so moving code does not make a finding new`() async throws {
         let (result, root) = try await report()
         let shifted = try await withCorpus(["Sources/T.swift": "\n\n" + source]) { other in
-            try await Analyzer().analyze(paths: [other + "/Sources/T.swift"], cacheURL: nil)
+            try await Analyzer().analyze(paths: [other + "/Sources/T.swift"], cache: nil)
         }
         #expect(shifted.findings[0].line == result.findings[0].line + 2)
         #expect(shifted.findings[0].fingerprint(root: nil).isEmpty == false)

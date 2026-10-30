@@ -18,11 +18,15 @@ public enum ReportFormatter {
     ///   - relativeTo: when set, the directory paths in `xcode` and `json` output are made relative to.
     /// - Throws: an encoding error.
     public static func render(
-        _ report: AnalysisReport, format: OutputFormat, root: String?, relativeTo: String?, baselined: Int = 0
+        _ report: AnalysisReport, format: OutputFormat, root: String?, relativeTo: String?, baselined: Int = 0,
+        timings: Bool = false, verbose: Bool = false
     ) throws -> String {
         switch format {
         case .xcode: return xcode(report, relativeTo: relativeTo)
-        case .json: return try json(report, root: root, relativeTo: relativeTo, baselined: baselined)
+        case .json:
+            return try json(
+                report, root: root, relativeTo: relativeTo, baselined: baselined,
+                timings: timings ? report.timings : nil, verbose: verbose)
         case .sarif: return try SarifLog.render(report, root: relativeTo ?? root)
         }
     }
@@ -72,9 +76,10 @@ public enum ReportFormatter {
         let findings: [JSONFinding]
     }
 
-    private static func json(_ report: AnalysisReport, root: String?, relativeTo: String?, baselined: Int) throws
-        -> String
-    {
+    private static func json(
+        _ report: AnalysisReport, root: String?, relativeTo: String?, baselined: Int, timings: [String: Double]?,
+        verbose: Bool
+    ) throws -> String {
         let value = JSONReport(
             analyzedFileCount: report.analyzedFileCount, cacheHits: report.cacheHits, cacheMisses: report.cacheMisses,
             suppressed: report.suppressed.count, baselined: baselined,
@@ -92,10 +97,15 @@ public enum ReportFormatter {
         // ADR-0017: schemaVersion, tool and version as before, from the shared envelope, with runNotes and skippedFiles.
         let envelope = ReportEnvelope(
             value, tool: ToolInfo.name, version: ToolInfo.version,
-            runNotes: report.cacheNote.map { [RunNote(code: "cache", severity: "note", message: $0)] } ?? [],
+            runNotes: (report.cacheNote.map { [RunNote(code: "cache", severity: "note", message: $0)] } ?? [])
+                + report.classificationIssues.map { issue in
+                    RunNote(
+                        code: issue.code, severity: "note", message: issue.message,
+                        paths: issue.paths.map { shown($0, relativeTo) }, verbose: verbose)
+                } + report.runNotes,
             skippedFiles: report.degraded.keys.sorted().map {
                 SkippedFile(path: shown($0, relativeTo), reason: .degraded)
-            })
+            }, timings: timings)
         return String(decoding: try encoder.encodeToBytes(envelope), as: UTF8.self) + "\n"
     }
 }

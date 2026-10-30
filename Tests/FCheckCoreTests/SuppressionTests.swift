@@ -6,7 +6,7 @@ import Testing
 
     private func report(_ source: String) async throws -> AnalysisReport {
         try await withCorpus(["T.swift": source]) { root in
-            try await Analyzer().analyze(paths: [root + "/T.swift"], cacheURL: nil)
+            try await Analyzer().analyze(paths: [root + "/T.swift"], cache: nil)
         }
     }
 

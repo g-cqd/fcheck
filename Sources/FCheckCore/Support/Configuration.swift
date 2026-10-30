@@ -47,8 +47,27 @@ public struct Configuration: Codable, Sendable, Equatable {
     /// The directory `exclude` globs are relative to: the configuration file's, set by ``load(from:)``. Not part of
     /// the file.
     public var root: String?
-    /// Whether test and generated code is analyzed. By default it is not.
-    public var includeTests: Bool
+    /// Which regions besides production code are analyzed (`includeRegions`, `excludeRegions`; analyzerkit ADR-0019).
+    /// By default none: test, generated, script and the other regions are left out.
+    public var regions: RegionSelection
+
+    /// Whether test and generated code is analyzed: the old switch, now `includeRegions: "test,generated"`.
+    public var includeTests: Bool {
+        get {
+            regions.include.isSuperset(of: Self.testAndGenerated) && !regions.exclude.intersects(Self.testAndGenerated)
+        }
+        set {
+            regions = RegionSelection(
+                include: newValue
+                    ? regions.include.union(Self.testAndGenerated) : regions.include.subtracting(Self.testAndGenerated),
+                exclude: regions.exclude)
+        }
+    }
+
+    private static let testAndGenerated: CodeRegion = [.test, .generated]
+
+    /// Whether a file of `region` is analyzed: production code always, other regions when selected.
+    public func analyzes(_ region: CodeRegion) -> Bool { region.isEmpty || regions.isIncluded(region) }
 
     public init(
         disable: [RuleID] = [], severity: [RuleID: Severity] = [:], resources: [Resource] = [], flush: [String] = [],
@@ -59,7 +78,7 @@ public struct Configuration: Codable, Sendable, Equatable {
         self.resources = resources
         self.flush = flush
         self.exclude = exclude
-        self.includeTests = includeTests
+        self.regions = includeTests ? RegionSelection(include: Self.testAndGenerated, exclude: []) : .none
     }
 
     public static let `default` = Configuration()
@@ -86,20 +105,16 @@ public struct Configuration: Codable, Sendable, Equatable {
         let regions = try decoder.container(keyedBy: RegionKeys.self)
         let included = try regions.decodeIfPresent(String.self, forKey: .includeRegions)
         let excluded = try regions.decodeIfPresent(String.self, forKey: .excludeRegions)
-        var fromRegions: Bool?
-        if included != nil || excluded != nil {
-            do {
-                let selection = try RegionSelection(include: included, exclude: excluded)
-                fromRegions = selection.isIncluded(.test) || selection.isIncluded(.generated)
-            } catch {
-                throw DecodingError.dataCorruptedError(
-                    forKey: .includeRegions, in: regions, debugDescription: error.description)
-            }
+        do {
+            self.regions = try RegionSelection(include: included, exclude: excluded)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                forKey: .includeRegions, in: regions, debugDescription: error.description)
         }
-        includeTests = try values.decodeIfPresent(Bool.self, forKey: .includeTests) ?? fromRegions ?? false
+        if try values.decodeIfPresent(Bool.self, forKey: .includeTests) == true { includeTests = true }
     }
 
-    /// The shared keys fcheck reads through `includeTests` rather than storing.
+    /// The shared region keys (ADR-0020 item 6).
     private enum RegionKeys: String, CodingKey { case includeRegions, excludeRegions }
 
     public func encode(to encoder: any Encoder) throws {
@@ -110,7 +125,8 @@ public struct Configuration: Codable, Sendable, Equatable {
         try values.encode(resources, forKey: .resources)
         try values.encode(flush, forKey: .flush)
         try values.encode(exclude, forKey: .exclude)
-        try values.encode(includeTests, forKey: .includeTests)
+        // The regions are not encoded: they choose which files are reported, not what a file's facts are, so they stay
+        // out of ``salt`` and the cache serves any selection.
     }
 
     /// Why a configuration file was not used.

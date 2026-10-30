@@ -41,7 +41,12 @@ import Testing
     @Test func `a changed configuration changes the cache salt`() {
         #expect(Configuration.default.salt == Configuration().salt)
         #expect(Configuration.default.salt != Configuration(flush: ["x"]).salt)
-        #expect(Configuration.default.salt != Configuration(includeTests: true).salt)
+    }
+
+    /// Regions choose which files are reported, not what a file's facts are, so a cache written under one selection
+    /// serves another (analyzerkit roadmap 0021): files a region left out were never cached, and are parsed when asked for.
+    @Test func `the region selection does not change the cache salt`() {
+        #expect(Configuration.default.salt == Configuration(includeTests: true).salt)
     }
 
     @Test func `a severity from the configuration is the finding's severity`() {
