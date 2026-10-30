@@ -20,12 +20,15 @@ fcheck analyze Sources                      # xcode-style diagnostics, notes for
 fcheck analyze Sources --format sarif --strict
 fcheck analyze Sources --rules leak-on-exit,replace-not-durable
 fcheck rules                                # the catalogue
-fcheck explain replace-not-durable          # the obligation and the usual fix
+fcheck explain replace-not-durable          # the obligation and the usual fix (also `fcheck rules <id>`)
 ```
 
 `--baseline FILE` and `--write-baseline FILE` adopt a rule on code that already breaks it; `--only FILE` and `--only-from`
-report one file of a corpus that is still analysed whole; `--relative-to DIR` shortens paths; `--cache-path` and
-`--no-cache` control the per-file cache, which is keyed by content, the configuration and the build of the tool. Flags,
+report one file of a corpus that is still analysed whole, and `--report-new-since BASELINE` adds the findings outside
+that scope which the base branch's baseline does not hold; `--relative-to DIR` shortens paths; `--exclude-path PATTERN`
+leaves paths out; `--verbose`, `--quiet` and `--timings` control stderr; `--cache-path DIR` (the cache's root directory)
+and `--no-cache` control the per-file cache, which is keyed by content, the configuration and the build of the tool.
+`--define NAME` is accepted and has no effect yet: fcheck reads every `#if` clause. Flags,
 exit codes and the report schema are the ones arcleak, dolly and deadwood use: `0` passed; `1` an error finding, or with
 `--strict` a warning; `64` usage (a bad argument, a missing path, no Swift file); `70` no file could be read; `74` a
 `--write-baseline` file could not be written; `78` an invalid configuration or baseline. A note never fails a run.
@@ -33,8 +36,12 @@ exit codes and the report schema are the ones arcleak, dolly and deadwood use: `
 ## Configuration
 
 Configuration is read from one directory: the current one if it holds `.swift-analyzers.json` or `.fcheck.json`, else the nearest directory holding one, up to the repository root. `.swift-analyzers.json` is shared by arcleak, deadwood, dolly and fcheck: its top level holds `exclude`, `includeRegions`, `excludeRegions`, `defines` and `platforms`, and a `"fcheck"` section holds fcheck's own keys. The shared top level, the section and `.fcheck.json` apply in that order: `exclude` lists add up, objects merge key by key, other values replace. An unknown key, or a key given twice, exits `78` and names the file and the key. `--config FILE` reads that one file instead, in the shared format when it is named `.swift-analyzers.json`.
-`includeRegions` containing `test` or `generated` (and not excluded) analyzes test and generated code, as
-`--include-tests` does.
+`includeRegions` and `excludeRegions` (or `--include-regions` and `--exclude-regions`) choose which code besides production
+is analysed: `test`, `generated`, `script` (package manifests, files a build phase runs), `preview`, `debug`, `mock`, or
+`all`; excluding wins. A file's region comes from its package or Xcode project first (a test target is test code wherever
+it lives), then from its content (a test-framework import, a generator's header), then from path conventions; a file in a
+project that no target compiles is reported in a note. `includeTests: true` and `--include-tests` (deprecated) mean
+`test,generated`.
 
 `.fcheck.json`, for example:
 
@@ -47,8 +54,8 @@ Configuration is read from one directory: the current one if it holds `.swift-an
   "includeTests": false }
 ```
 
-A name the file does not know, or JSON that does not parse, fails the run; it never quietly turns a rule off. Test and
-generated files are not analysed unless `includeTests` or `--include-tests` says so.
+A name the file does not know, or JSON that does not parse, fails the run; it never quietly turns a rule off. Only
+production code is analysed unless a region is included.
 
 ## Suppression
 
