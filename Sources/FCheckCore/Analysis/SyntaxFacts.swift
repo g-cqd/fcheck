@@ -163,3 +163,28 @@ enum SyntaxFacts {
         return nil
     }
 }
+
+/// The last name of every call in a file, sorted and unique, read from the called expression's last token.
+final class CalledNames: SyntaxVisitor {
+    private var names: Set<String> = []
+
+    static func of(_ tree: some SyntaxProtocol) -> [String] {
+        let visitor = CalledNames(viewMode: .sourceAccurate)
+        visitor.walk(tree)
+        return visitor.names.sorted()
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        let called = node.calledExpression
+        if let reference = called.as(DeclReferenceExprSyntax.self) {
+            names.insert(reference.baseName.text)
+        } else if let access = called.as(MemberAccessExprSyntax.self) {
+            names.insert(access.declName.baseName.text)
+        } else if let specialized = called.as(GenericSpecializationExprSyntax.self),
+            let reference = specialized.expression.as(DeclReferenceExprSyntax.self)
+        {
+            names.insert(reference.baseName.text)
+        }
+        return .visitChildren
+    }
+}

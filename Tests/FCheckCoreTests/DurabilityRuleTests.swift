@@ -88,14 +88,23 @@ import Testing
         #expect(found.count == 1)
     }
 
-    @Test func `F_FULLFSYNC, a sync method, and anything named flush count as flushes`() {
-        for flush in ["fcntl(d, F_FULLFSYNC)", "file.sync(durability)", "try SessionFileIO.flush(d)", "flushAll()"] {
+    @Test func `F_FULLFSYNC and a sync or flush method flush the data, and only a directory flush settles the rename`()
+    {
+        for flush in ["fcntl(d, F_FULLFSYNC)", "file.sync(durability)", "try SessionFileIO.flush(d)"] {
             #expect(
                 durability(
-                    "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n \(flush)\n guard rename(a, b) == 0 else { throw E() }\n \(flush)\n}"
+                    "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n \(flush)\n guard rename(a, b) == 0 else { throw E() }\n try flushDirectory(of: b)\n}"
                 ).isEmpty,
                 "\(flush)")
+            let after = durability(
+                "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n \(flush)\n guard rename(a, b) == 0 else { throw E() }\n \(flush)\n}"
+            )
+            #expect(after.count == 1 && after.first?.message.contains("directory") == true, "\(flush)")
         }
+        let named = durability(
+            "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n flushAll()\n guard rename(a, b) == 0 else { throw E() }\n}"
+        )
+        #expect(named.count == 2, "a name that only contains flush is not a flush")
     }
 
     @Test func `a name from the configuration counts`() {

@@ -11,6 +11,22 @@ struct FunctionUnit {
     let path: String
     /// The type that encloses the function, if any.
     let typeName: String?
+    /// The parameters, by the name the body uses, with their written type.
+    var parameters: [Parameter] = []
+
+    struct Parameter {
+        let name: String
+        let type: String
+        let hasDefault: Bool
+    }
+
+    /// How a corpus acquirer is recorded (roadmap 0025, F4): `Type.name#required-total`, `name#required-total` outside
+    /// a type, so a call matches only with an argument count the function accepts and, when the call's base has a
+    /// known type, only on that type.
+    var acquirerKey: String {
+        let required = parameters.count { !$0.hasDefault }
+        return (typeName.map { $0 + "." } ?? "") + simpleName + "#\(required)-\(parameters.count)"
+    }
 
     func line(of syntax: some SyntaxProtocol) -> Int {
         converter.location(for: syntax.positionAfterSkippingLeadingTrivia).line
@@ -89,13 +105,17 @@ final class UnitCollector: SyntaxVisitor {
     override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
         let labels = node.signature.parameterClause.parameters.map { $0.firstName.text + ":" }.joined()
         declared.insert(node.name.text)
-        add(node.name.text, labels: labels, statements: node.body?.statements)
+        add(
+            node.name.text, labels: labels, statements: node.body?.statements,
+            parameters: Self.parameters(node.signature.parameterClause.parameters))
         return .visitChildren
     }
 
     override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
         let labels = node.signature.parameterClause.parameters.map { $0.firstName.text + ":" }.joined()
-        add("init", labels: labels, statements: node.body?.statements)
+        add(
+            "init", labels: labels, statements: node.body?.statements,
+            parameters: Self.parameters(node.signature.parameterClause.parameters))
         return .visitChildren
     }
 
@@ -119,14 +139,25 @@ final class UnitCollector: SyntaxVisitor {
         return .visitChildren
     }
 
-    private func add(_ name: String, labels: String, statements: CodeBlockItemListSyntax?, isProperty: Bool = false) {
+    private static func parameters(_ list: FunctionParameterListSyntax) -> [FunctionUnit.Parameter] {
+        list.map { parameter in
+            FunctionUnit.Parameter(
+                name: (parameter.secondName ?? parameter.firstName).text, type: parameter.type.trimmedDescription,
+                hasDefault: parameter.defaultValue != nil)
+        }
+    }
+
+    private func add(
+        _ name: String, labels: String, statements: CodeBlockItemListSyntax?, isProperty: Bool = false,
+        parameters: [FunctionUnit.Parameter] = []
+    ) {
         guard let statements else { return }
         let owner = types.last
         let full = (owner.map { $0 + "." } ?? "") + (isProperty ? name : "\(name)(\(labels))")
         units.append(
             FunctionUnit(
-                name: full, simpleName: name, statements: statements, converter: converter, path: path, typeName: owner)
-        )
+                name: full, simpleName: name, statements: statements, converter: converter, path: path, typeName: owner,
+                parameters: parameters))
         guard let owner else { return }
         for (member, expression) in AssignmentFinder.assignments(in: statements) {
             definitions.add(.init(expression: expression, statements: statements), member: member, in: owner)

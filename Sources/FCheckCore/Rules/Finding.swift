@@ -42,8 +42,12 @@ public struct Finding: Codable, Sendable, Hashable {
 /// What analysing one file produced; what the cache stores.
 public struct FileResult: Codable, Sendable, Equatable {
     public var findings: [Finding]
-    /// Simple names of functions in this file that return a handle they acquired, so callers acquire through them.
+    /// Functions in this file that return a handle they acquired, so callers acquire through them, as
+    /// `Type.name#required-total` (roadmap 0025, F4).
     public var acquirers: [String]
+    /// The last name of every call in the file, sorted and unique: the second pass reruns a file only when one of them
+    /// names a corpus acquirer.
+    public var calledNames: [String] = []
     /// The suppression directives found in the file.
     public var directives: [Directive]
     /// Why the file was not analysed, when its syntax tree nests too deeply to walk (analyzerkit roadmap 0041).

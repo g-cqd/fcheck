@@ -6,8 +6,14 @@ import SwiftSyntax
 ///
 /// Two ways to break the order are reported, each once per `rename`: bytes written on some path to the rename
 /// and not flushed before it, and a path from the rename to a normal end of the function with no flush after it.
-/// A flush is `fsync`, `fdatasync`, `fcntl(_, F_FULLFSYNC)`, a `sync` method, a call with `flush` in its name, or a
-/// name in the configuration.
+/// Flushes are typed by what they flush (roadmap 0025, F5). Any flush settles written bytes; only a flush of the
+/// directory settles a rename. A directory flush is `fsync`, `fdatasync` or `fcntl(_, F_FULLFSYNC)` on a descriptor
+/// opened with `O_DIRECTORY`, on a path that names a directory (`dir`, `deletingLastPathComponent`, `dirname`), or
+/// itself named so (`dir`, `dirFD`, `directoryDescriptor`), or
+/// a call whose name has a flush word and a directory word (`flushDirectory(of:)`, `syncParentDirectory`), or `flush`
+/// or `sync` given, or called on, a descriptor named like that (`flush(directory)`, `parentDir.sync()`). The same
+/// calls on another descriptor, and a call named exactly `flush` or `sync`, flush a file. A name in the configuration
+/// counts as both.
 struct DurabilityRule {
     private static let renames: Set<String> = [
         "rename", "Darwin.rename", "Glibc.rename", "renamex_np", "Darwin.renamex_np", "renameat", "Darwin.renameat",
@@ -15,11 +21,13 @@ struct DurabilityRule {
     private static let writes: Set<String> = [
         "write", "writeAll", "pwrite", "pwritev", "writev", "createFile", "fwrite", "fputs",
     ]
-    private static let flushes: Set<String> = ["fsync", "fdatasync", "sync", "F_FULLFSYNC"]
+    private static let descriptorFlushes: Set<String> = ["fsync", "fdatasync"]
+    private static let fileFlushes: Set<String> = ["flush", "sync"]
 
     private enum Event {
         case write
-        case flush
+        /// `directory` when the flush also settles a rename.
+        case flush(directory: Bool)
         /// `successOn` is the edge the rename is known to have worked on, or nil for any normal edge.
         case rename(successOn: ControlFlowGraph.EdgeKind?)
     }
@@ -44,7 +52,8 @@ struct DurabilityRule {
             return []
         }
         let graph = ControlFlowGraph.build(statements: unit.statements, converter: unit.converter)
-        let events = graph.nodes.map { eventsOf($0) }
+        let directories = Self.directoryDescriptors(in: unit.statements)
+        let events = graph.nodes.map { eventsOf($0, directories: directories) }
         let states = graph.solve(
             initial: State(), join: Self.join,
             transfer: { node, edge, state in Self.apply(events[node.id], node: node, edge: edge, state) })
@@ -67,14 +76,14 @@ struct DurabilityRule {
 
     // MARK: - Events
 
-    private func eventsOf(_ node: ControlFlowGraph.Node) -> [Event] {
+    private func eventsOf(_ node: ControlFlowGraph.Node, directories: Set<String>) -> [Event] {
         guard let syntax = node.syntax else { return [] }
         var events: [Event] = []
         for call in CallFinder.calls(in: syntax).sorted(by: { $0.node.endPosition < $1.node.endPosition }) {
             if Self.renames.contains(call.callee) {
                 events.append(.rename(successOn: node.kind == .condition ? Self.successEdge(of: call) : nil))
-            } else if isFlush(call) {
-                events.append(.flush)
+            } else if let directory = flushTarget(call, directories: directories) {
+                events.append(.flush(directory: directory))
             } else if Self.writes.contains(call.last) {
                 events.append(.write)
             }
@@ -82,12 +91,68 @@ struct DurabilityRule {
         return events
     }
 
-    private func isFlush(_ call: CallSite) -> Bool {
-        if Self.flushes.contains(call.last) || extraFlush.contains(call.callee) || extraFlush.contains(call.last) {
+    /// Whether `call` flushes a directory (true), only a file (false), or nothing (nil).
+    private func flushTarget(_ call: CallSite, directories: Set<String>) -> Bool? {
+        if extraFlush.contains(call.callee) || extraFlush.contains(call.last) { return true }
+        if Self.descriptorFlushes.contains(call.last)
+            || (call.last == "fcntl" && call.node.arguments.trimmedDescription.contains("F_FULLFSYNC"))
+        {
+            guard let descriptor = call.node.arguments.first?.expression else { return false }
+            if let name = SyntaxFacts.bareName(descriptor) {
+                return directories.contains(name) || Self.words(name).contains { $0.hasPrefix("dir") }
+            }
+            if let opened = SyntaxFacts.stripped(descriptor).as(FunctionCallExprSyntax.self) {
+                return Self.opensDirectory(opened)
+            }
+            return false
+        }
+        let words = Self.words(call.last)
+        if words.contains(where: { ["flush", "sync", "fsync"].contains($0) }),
+            words.contains(where: { $0.hasPrefix("dir") })
+        {
             return true
         }
-        if call.last.lowercased().contains("flush") { return true }
-        return call.last == "fcntl" && call.node.arguments.trimmedDescription.contains("F_FULLFSYNC")
+        guard Self.fileFlushes.contains(call.last) else { return nil }
+        // `flush(directory)`, `parentDir.sync()`: the descriptor or the receiver is named like a directory.
+        let target = call.node.arguments.first.flatMap { SyntaxFacts.bareName($0.expression) } ?? call.base
+        return directories.contains(target) || Self.words(target).contains { $0.hasPrefix("dir") }
+    }
+
+    /// The names a body assigns a descriptor of a directory to: `let d = open(p, O_DIRECTORY | …)`, or `open` of a path
+    /// that names a directory.
+    private static func directoryDescriptors(in body: CodeBlockItemListSyntax) -> Set<String> {
+        var found: Set<String> = []
+        for (name, value) in AssignmentFinder.assignments(in: body) {
+            if let call = SyntaxFacts.stripped(value).as(FunctionCallExprSyntax.self), opensDirectory(call) {
+                found.insert(name)
+            }
+        }
+        return found
+    }
+
+    private static func opensDirectory(_ node: FunctionCallExprSyntax) -> Bool {
+        let call = CallSite(node: node)
+        guard ["open", "openat"].contains(call.last), let path = node.arguments.first?.expression else { return false }
+        if node.arguments.dropFirst().contains(where: { $0.expression.trimmedDescription.contains("O_DIRECTORY") }) {
+            return true
+        }
+        let text = path.trimmedDescription
+        return text.lowercased().contains("dir") || text.contains("deletingLastPathComponent")
+    }
+
+    /// A name's camel-case words, lowercased: `syncParentDirectory` is `sync`, `parent`, `directory`.
+    private static func words(_ name: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        for character in name {
+            if (character.isUppercase || character == "_") && !current.isEmpty {
+                words.append(current)
+                current = ""
+            }
+            if character != "_" { current.append(character.lowercased()) }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
     }
 
     /// The edge of a condition on which `rename(...) <op> <value>` has succeeded.
@@ -128,9 +193,9 @@ struct DurabilityRule {
         for event in events {
             switch event {
             case .write: next.dirty = next.dirty ?? node.id
-            case .flush:
+            case .flush(let directory):
                 next.dirty = nil
-                next.pending = nil
+                if directory { next.pending = nil }
             case .rename(let successOn):
                 let worked = edge.kind != .thrown && (successOn == nil || successOn == edge.kind)
                 if worked { next.pending = minimum(next.pending, node.id) }

@@ -242,7 +242,7 @@ import Testing
             bytes: Array(
                 "func make(_ p: String) -> Int32 {\n let d = open(p, O_RDONLY)\n return d\n}\nfunc plain() {}".utf8),
             path: "T.swift", acquirers: [])
-        #expect(result.acquirers == ["make"])
+        #expect(result.acquirers == ["make#1-1"])
         #expect(result.findings.isEmpty)
     }
 
@@ -251,7 +251,7 @@ import Testing
             bytes: Array(
                 "func make(_ p: FilePath) -> FileDescriptor? {\n return try? FileDescriptor.open(p, .readOnly)\n}".utf8),
             path: "T.swift", acquirers: [])
-        #expect(result.acquirers == ["make"])
+        #expect(result.acquirers == ["make#1-1"])
     }
 
     @Test func `callers of an acquirer in another file are held to the obligation`() async throws {
