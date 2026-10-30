@@ -21,7 +21,7 @@ import Testing
             #expect(configuration.isExcluded(path: root + "/Sources/Generated/API.swift"))
             #expect(!configuration.isExcluded(path: root + "/Sources/App/Internal.swift"))
             let report = try await Analyzer(configuration: configuration)
-                .analyze(paths: Self.files.map { root + "/" + $0 }, cacheURL: nil)
+                .analyze(paths: Self.files.map { root + "/" + $0 }, cache: nil)
             let analysed = Set(report.findings.map { String($0.path.dropFirst(root.count + 1)) })
             #expect(analysed == ["Sources/App/Internal.swift", "Sources/App/App.swift"])
         }

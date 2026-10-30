@@ -263,7 +263,7 @@ import Testing
         ]
         try await withCorpus(files) { root in
             let report = try await Analyzer().analyze(
-                paths: files.keys.map { root + "/" + $0 }, cacheURL: nil)
+                paths: files.keys.map { root + "/" + $0 }, cache: nil)
             #expect(report.findings.map { URL(fileURLWithPath: $0.path).lastPathComponent } == ["Leaky.swift"])
             #expect(report.findings.first?.function == "leaky()")
         }

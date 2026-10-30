@@ -48,13 +48,18 @@ public struct FileResult: Codable, Sendable, Equatable {
     public var directives: [Directive]
     /// Why the file was not analysed, when its syntax tree nests too deeply to walk (analyzerkit roadmap 0041).
     public var degraded: String?
+    /// The file's region (`CodeRegion.rawValue`) as its project and its content say (analyzerkit ADR-0024); 0 is
+    /// production code.
+    public var region: UInt8
 
     public init(
-        findings: [Finding] = [], acquirers: [String] = [], directives: [Directive] = [], degraded: String? = nil
+        findings: [Finding] = [], acquirers: [String] = [], directives: [Directive] = [], degraded: String? = nil,
+        region: UInt8 = 0
     ) {
         self.findings = findings
         self.acquirers = acquirers
         self.directives = directives
         self.degraded = degraded
+        self.region = region
     }
 }

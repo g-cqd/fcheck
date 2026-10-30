@@ -76,6 +76,16 @@ import Testing
         }
     }
 
+    /// ADR-0019: each tool pins its own help. Recorded from the migrated build; regenerate only for a deliberate change.
+    @Test func `the help is the recorded one`() throws {
+        try Self.workspace([:]) { root in
+            let golden = Self.packageRoot.appending(path: "Tests/FCheckCoreTests/Goldens/help-analyze.txt")
+            let recorded = try String(contentsOf: golden, encoding: .utf8)
+            let help = try Self.run(["analyze", "--help"], in: root).output
+            #expect(help == recorded, "help differs from Goldens/help-analyze.txt")
+        }
+    }
+
     @Test func `exclude-path leaves a file out`() throws {
         try Self.workspace(["Sources/A.swift": Self.leak("a"), "Sources/B.swift": Self.leak("b")]) { root in
             let run = try Self.run(["analyze", ".", "--no-cache", "--exclude-path", "B.swift"], in: root)
@@ -109,7 +119,8 @@ import Testing
 
     @Test func `an unknown region is a usage error`() throws {
         try Self.workspace(["Sources/A.swift": Self.leak("a")]) { root in
-            #expect(try Self.run(["analyze", ".", "--no-cache", "--include-regions", "tests"], in: root).status == 64)
+            let run = try Self.run(["analyze", ".", "--no-cache", "--include-regions", "tests"], in: root)
+            #expect(run.status == 64)
         }
     }
 

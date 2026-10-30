@@ -1,3 +1,4 @@
+import CorpusScan
 import FCheckCore
 import Foundation
 import ProjectModel
@@ -8,10 +9,10 @@ import Testing
 
     @Test func `a second run over unchanged files parses nothing and finds the same`() async throws {
         try await withCorpus(["A.swift": leaking, "B.swift": "func ok() {}"]) { root in
-            let cache = URL(fileURLWithPath: root + "/cache/facts.json")
+            let cache = CacheLocation(root: root + "/cache", workspace: root)
             let paths = [root + "/A.swift", root + "/B.swift"]
-            let cold = try await Analyzer().analyze(paths: paths, cacheURL: cache)
-            let warm = try await Analyzer().analyze(paths: paths, cacheURL: cache)
+            let cold = try await Analyzer().analyze(paths: paths, cache: cache)
+            let warm = try await Analyzer().analyze(paths: paths, cache: cache)
             #expect(cold.cacheHits == 0 && warm.cacheHits == 2)
             #expect(warm.findings == cold.findings && warm.findings.count == 1)
         }
@@ -19,10 +20,10 @@ import Testing
 
     @Test func `a changed configuration does not reuse results made under another`() async throws {
         try await withCorpus(["A.swift": leaking]) { root in
-            let cache = URL(fileURLWithPath: root + "/cache/facts.json")
-            _ = try await Analyzer().analyze(paths: [root + "/A.swift"], cacheURL: cache)
+            let cache = CacheLocation(root: root + "/cache", workspace: root)
+            _ = try await Analyzer().analyze(paths: [root + "/A.swift"], cache: cache)
             let other = try await Analyzer(configuration: Configuration(severity: [.leakOnExit: .error]))
-                .analyze(paths: [root + "/A.swift"], cacheURL: cache)
+                .analyze(paths: [root + "/A.swift"], cache: cache)
             #expect(other.cacheHits == 0 && other.findings.first?.severity == .error)
         }
     }
@@ -31,9 +32,9 @@ import Testing
         let files = ["Sources/A.swift": leaking, "Tests/ATests.swift": leaking, "Sources/B.generated.swift": leaking]
         try await withCorpus(files) { root in
             let paths = files.keys.map { root + "/" + $0 }
-            #expect(try await Analyzer().analyze(paths: paths, cacheURL: nil).findings.count == 1)
+            #expect(try await Analyzer().analyze(paths: paths, cache: nil).findings.count == 1)
             let all = try await Analyzer(configuration: Configuration(includeTests: true)).analyze(
-                paths: paths, cacheURL: nil)
+                paths: paths, cache: nil)
             #expect(all.findings.count == 3)
         }
     }
@@ -42,7 +43,7 @@ import Testing
         try await withCorpus(["Vendor/A.swift": leaking, "B.swift": leaking]) { root in
             let paths = [root + "/Vendor/A.swift", root + "/B.swift"]
             let report = try await Analyzer(configuration: Configuration(exclude: ["/Vendor/"])).analyze(
-                paths: paths, cacheURL: nil)
+                paths: paths, cache: nil)
             #expect(report.findings.count == 1 && report.analyzedFileCount == 1)
         }
     }
@@ -50,7 +51,7 @@ import Testing
     @Test func `a file that cannot be read is reported degraded and the rest still runs`() async throws {
         try await withCorpus(["A.swift": leaking]) { root in
             let report = try await Analyzer().analyze(
-                paths: [root + "/A.swift", root + "/Missing.swift"], cacheURL: nil)
+                paths: [root + "/A.swift", root + "/Missing.swift"], cache: nil)
             #expect(report.findings.count == 1 && report.degraded.keys.contains { $0.hasSuffix("Missing.swift") })
         }
     }
@@ -58,7 +59,7 @@ import Testing
     @Test func `findings are sorted by path and line`() async throws {
         let two = leaking + "\nfunc g() throws {\n let e = open(p, 0)\n try work()\n}"
         try await withCorpus(["B.swift": leaking, "A.swift": two]) { root in
-            let report = try await Analyzer().analyze(paths: [root + "/B.swift", root + "/A.swift"], cacheURL: nil)
+            let report = try await Analyzer().analyze(paths: [root + "/B.swift", root + "/A.swift"], cache: nil)
             #expect(
                 report.findings.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent):\($0.line)" } == [
                     "A.swift:2", "A.swift:6", "B.swift:2",
@@ -82,12 +83,12 @@ import Testing
     @Test func `switching a rule off and on again reuses the cache`() async throws {
         let leaking = "func f() throws {\n let d = open(p, 0)\n try work()\n}"
         try await withCorpus(["A.swift": leaking]) { root in
-            let cache = URL(fileURLWithPath: root + "/cache/facts.json")
+            let cache = CacheLocation(root: root + "/cache", workspace: root)
             let path = root + "/A.swift"
-            let all = try await Analyzer().analyze(paths: [path], cacheURL: cache)
+            let all = try await Analyzer().analyze(paths: [path], cache: cache)
             let off = try await Analyzer(configuration: Configuration(disable: [.leakOnExit])).analyze(
-                paths: [path], cacheURL: cache)
-            let on = try await Analyzer().analyze(paths: [path], cacheURL: cache)
+                paths: [path], cache: cache)
+            let on = try await Analyzer().analyze(paths: [path], cache: cache)
             #expect(all.findings.count == 1 && off.findings.isEmpty && on.findings.count == 1)
             #expect(off.cacheHits == 1 && on.cacheHits == 1)
         }

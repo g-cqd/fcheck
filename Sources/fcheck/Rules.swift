@@ -5,9 +5,18 @@ import SystemPackage
 
 struct Rules: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "The rules: id, shape, evidence level, severity, and what each checks.")
+        abstract:
+            "The rules: id, shape, evidence level, severity, and what each checks; with an id, that rule explained.")
 
-    func run() {
+    @Argument(help: "A rule id: explain that rule, as `fcheck explain <id>` does.")
+    var rule: String?
+
+    func run() throws {
+        if let rule {
+            var explain = Explain()
+            explain.rule = rule
+            return try explain.run()
+        }
         for rule in RuleID.allCases {
             write(
                 "\(rule.rawValue)  [\(rule.shape), \(rule.evidence), \(rule.defaultSeverity.rawValue)]\n    \(rule.summary)\n",
@@ -20,7 +29,7 @@ struct Explain: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "What a rule requires and how to satisfy it.")
 
     @Argument(help: "A rule id, from `fcheck rules`.")
-    var rule: String
+    var rule: String = ""
 
     func run() throws {
         guard let found = RuleID(rawValue: rule) else {

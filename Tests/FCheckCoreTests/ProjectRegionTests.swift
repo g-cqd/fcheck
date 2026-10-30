@@ -1,5 +1,6 @@
 import FCheckCore
 import Foundation
+import ProjectModel
 import Testing
 
 /// Test and generated code is classified from the project before path conventions (analyzerkit ADR-0024, roadmap
