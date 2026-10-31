@@ -1,7 +1,9 @@
 import ProjectModel
 import SwiftSyntax
 
-/// `cut-then-decode`: `String(decoding: <bytes cut at a count>, as: UTF8.self)`.
+/// `cut-then-decode`: `String(decoding: <bytes cut at a count>, as: UTF8.self)`, which turns a split character into
+/// U+FFFD; `String(data:encoding: .utf8)`, `String(bytes:encoding: .utf8)` and `String(<utf8 or utf16 view cut>)`, which
+/// return nil instead, so the whole text is lost (analyzerkit roadmap 0066).
 ///
 /// The bytes are followed one hop at a time from the decoded expression to where they were made: a local or a
 /// member of the same type, assigned an expression that takes a `prefix(n)` or `suffix(n)`. A value that passed through any other call is left alone, since that call may move the cut to a
@@ -21,7 +23,8 @@ struct DecodeCutRule {
     }
 
     func analyze(_ unit: FunctionUnit, definitions: MemberDefinitions) -> [Finding] {
-        let decodes = CallFinder.calls(in: unit.statements).filter(Self.isDecode)
+        let decodes = CallFinder.calls(in: unit.statements).compactMap { call in Self.form(of: call).map { (call, $0) }
+        }
         guard !decodes.isEmpty else { return [] }
         let text = unit.statements.description
         if Self.boundaryHandling.contains(where: text.contains) { return [] }
@@ -29,7 +32,7 @@ struct DecodeCutRule {
         let members = unit.typeName.flatMap { definitions.byType[$0] } ?? [:]
 
         var findings: [Finding] = []
-        for decode in decodes {
+        for (decode, form) in decodes {
             guard let argument = decode.arguments.first?.expression,
                 let cut = cut(in: argument, locals: locals, members: members, unit: unit, hops: 0)
             else { continue }
@@ -38,8 +41,7 @@ struct DecodeCutRule {
                 Finding(
                     rule: .cutThenDecode, severity: severity, path: unit.path, line: line,
                     column: unit.column(of: decode.node), function: unit.name,
-                    message:
-                        "`String(decoding:)` of bytes cut by `\(cut.operation)` at line \(cut.line): a character that straddles the cut becomes U+FFFD",
+                    message: form.message(operation: cut.operation, line: cut.line),
                     witness: [
                         Finding.Step(line: cut.line, text: cut.text),
                         Finding.Step(
@@ -50,10 +52,46 @@ struct DecodeCutRule {
         return findings
     }
 
-    private static func isDecode(_ call: CallSite) -> Bool {
+    /// How a decode of cut bytes fails.
+    private enum Form {
+        /// `String(decoding:as: UTF8.self)`: the split character becomes U+FFFD.
+        case replacing
+        /// `String(data:encoding:)` or `String(bytes:encoding:)` with `.utf8`: nil.
+        case optional(label: String)
+        /// `String(<view>)` of a cut `utf8` or `utf16` view: nil.
+        case view(encoding: String)
+
+        func message(operation: String, line: Int) -> String {
+            switch self {
+            case .replacing:
+                "`String(decoding:)` of bytes cut by `\(operation)` at line \(line): a character that straddles the cut becomes U+FFFD"
+            case .optional(let label):
+                "`String(\(label):encoding:)` of bytes cut by `\(operation)` at line \(line): a character that straddles the cut makes it nil, and the whole text is lost"
+            case .view(let encoding):
+                "`String(_:)` of \(encoding) code units cut by `\(operation)` at line \(line): a character split at the cut makes it nil, and the whole text is lost"
+            }
+        }
+    }
+
+    private static func form(of call: CallSite) -> Form? {
+        guard call.callee == "String" else { return nil }
         let arguments = call.arguments
-        return call.callee == "String" && arguments.count >= 2 && arguments[0].label == "decoding"
-            && arguments[1].label == "as" && arguments[1].expression.trimmedDescription.contains("UTF8")
+        if arguments.count >= 2, arguments[0].label == "decoding", arguments[1].label == "as",
+            arguments[1].expression.trimmedDescription.contains("UTF8")
+        {
+            return .replacing
+        }
+        if arguments.count == 2, let label = arguments[0].label, ["data", "bytes"].contains(label),
+            arguments[1].label == "encoding", arguments[1].expression.trimmedDescription.hasSuffix("utf8")
+        {
+            return .optional(label: label)
+        }
+        if arguments.count == 1, arguments[0].label == nil {
+            let text = arguments[0].expression.trimmedDescription
+            if text.contains(".utf16") { return .view(encoding: "UTF-16") }
+            if text.contains(".utf8") { return .view(encoding: "UTF-8") }
+        }
+        return nil
     }
 
     /// Calls that hand back the same bytes, or a view of them, so a cut inside them is still a cut.

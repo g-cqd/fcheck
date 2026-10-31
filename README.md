@@ -9,7 +9,7 @@ when a later step throws, whether a file replacement is durable, whether text is
 | --- | --- | --- |
 | `leak-on-exit` | a descriptor or handle (`open`, `FileDescriptor.open`, `socket`, `opendir`, `fopen`, and any function of the corpus that returns one) is closed, handed on or returned on every path out; a pair begun on a receiver or an argument (`session.beginConfiguration()`, `device.lockForConfiguration()`, `CVPixelBufferLockBaseAddress(b, …)`) is ended on every path out | pairing |
 | `replace-not-durable` | a `rename` over a file comes after a flush of the bytes written and before a flush of the directory | ordering |
-| `cut-then-decode` | `String(decoding: bytes.prefix(n), as: UTF8.self)` does not split a character at the cut | bounds |
+| `cut-then-decode` | `String(decoding: bytes.prefix(n), as: UTF8.self)` does not split a character at the cut (it would become U+FFFD), nor `String(data:encoding: .utf8)`, `String(bytes:encoding: .utf8)` or `String(s.utf16.prefix(n))` (they would return nil, losing the whole text) | bounds |
 
 Every finding carries the path through the function that breaks the obligation, as the lines it passes, and says how sure
 it is (`L0`: path analysis on the function's control-flow graph; exact for the paths it models, silent about the rest).
