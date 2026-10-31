@@ -50,6 +50,15 @@ public struct Configuration: Codable, Sendable, Equatable {
     /// Which regions besides production code are analyzed (`includeRegions`, `excludeRegions`; analyzerkit ADR-0019).
     /// By default none: test, generated, script and the other regions are left out.
     public var regions: RegionSelection
+    /// The conditions a run compiles under (the shared `defines` and `platforms`, and `--define`). With a define, only
+    /// the active `#if` clauses are read (analyzerkit ADR-0029); without, every clause is.
+    public var defines: [String]
+    public var platforms: [String]
+
+    /// ``defines`` and ``platforms`` as analyzerkit reads them.
+    public var conditions: CompilationConditions {
+        CompilationConditions(defines: Set(defines), platforms: Set(platforms))
+    }
 
     /// Whether test and generated code is analyzed: the old switch, now `includeRegions: "test,generated"`.
     public var includeTests: Bool {
@@ -71,7 +80,7 @@ public struct Configuration: Codable, Sendable, Equatable {
 
     public init(
         disable: [RuleID] = [], severity: [RuleID: Severity] = [:], resources: [Resource] = [], flush: [String] = [],
-        exclude: [String] = [], includeTests: Bool = false
+        exclude: [String] = [], includeTests: Bool = false, defines: [String] = [], platforms: [String] = []
     ) {
         self.disable = disable
         self.severity = severity
@@ -79,11 +88,15 @@ public struct Configuration: Codable, Sendable, Equatable {
         self.flush = flush
         self.exclude = exclude
         self.regions = includeTests ? RegionSelection(include: Self.testAndGenerated, exclude: []) : .none
+        self.defines = defines
+        self.platforms = platforms
     }
 
     public static let `default` = Configuration()
 
-    private enum CodingKeys: String, CodingKey { case disable, severity, resources, flush, exclude, includeTests }
+    private enum CodingKeys: String, CodingKey {
+        case disable, severity, resources, flush, exclude, includeTests, defines, platforms
+    }
 
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -101,6 +114,8 @@ public struct Configuration: Codable, Sendable, Equatable {
         resources = try values.decodeIfPresent([Resource].self, forKey: .resources) ?? []
         flush = try values.decodeIfPresent([String].self, forKey: .flush) ?? []
         exclude = try values.decodeIfPresent([String].self, forKey: .exclude) ?? []
+        defines = try values.decodeIfPresent([String].self, forKey: .defines) ?? []
+        platforms = try values.decodeIfPresent([String].self, forKey: .platforms) ?? []
         // ADR-0020 item 6: the shared region lists reach fcheck's one switch for test and generated code.
         let regions = try decoder.container(keyedBy: RegionKeys.self)
         let included = try regions.decodeIfPresent(String.self, forKey: .includeRegions)
@@ -125,6 +140,10 @@ public struct Configuration: Codable, Sendable, Equatable {
         try values.encode(resources, forKey: .resources)
         try values.encode(flush, forKey: .flush)
         try values.encode(exclude, forKey: .exclude)
+        // What a file's facts are depends on the conditions, so they are in ``salt``; absent when unset, so the salt of
+        // a configuration without them is what it was.
+        if !defines.isEmpty { try values.encode(defines.sorted(), forKey: .defines) }
+        if !platforms.isEmpty { try values.encode(platforms.sorted(), forKey: .platforms) }
         // The regions are not encoded: they choose which files are reported, not what a file's facts are, so they stay
         // out of ``salt`` and the cache serves any selection.
     }
