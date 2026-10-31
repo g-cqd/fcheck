@@ -143,11 +143,14 @@ import Testing
         }
     }
 
-    @Test func `define is accepted and says it has no effect yet`() throws {
-        try Self.workspace(["Sources/A.swift": Self.leak("a")]) { root in
-            let run = try Self.run(["analyze", ".", "--no-cache", "--define", "DEBUG"], in: root)
-            #expect(run.status == 0)
-            #expect(run.errors.contains("fcheck: note: --define has no effect yet: fcheck reads every #if clause"))
+    @Test func `define reads only the active clauses, with no note`() throws {
+        let gated = "import Darwin\n#if FEATURE\nfunc f() { let fd = open(\"a\", O_RDONLY); print(fd) }\n#endif\n"
+        try Self.workspace(["Sources/A.swift": gated]) { root in
+            let feature = try Self.run(["analyze", ".", "--no-cache", "--define", "FEATURE"], in: root)
+            #expect(feature.output.contains("leak-on-exit"))
+            #expect(!feature.errors.contains("no effect"))
+            let other = try Self.run(["analyze", ".", "--no-cache", "--define", "OTHER"], in: root)
+            #expect(other.status == 0 && !other.output.contains("leak-on-exit"))
         }
     }
 
