@@ -18,6 +18,7 @@ struct ResourceRule {
         let acquireByName: [String: [Acquirer]]
         let release: Set<String>
         let releaseMethods: Set<String>
+        let holds: Configuration.Resource.Holds
     }
 
     /// A corpus function that returns a handle it acquired, from its ``FunctionUnit/acquirerKey``.
@@ -97,6 +98,18 @@ struct ResourceRule {
         Configuration.Resource(
             label: "file stream", acquire: ["fopen", "Darwin.fopen", "fdopen", "tmpfile"],
             release: ["fclose", "Darwin.fclose"]),
+        // AVCaptureSession: changes take effect at the outermost commit; one never committed leaves the session in
+        // configuration, and the next begin nests inside it.
+        Configuration.Resource(
+            label: "capture-session configuration", acquire: ["beginConfiguration"],
+            release: ["commitConfiguration"], holds: .receiver),
+        // AVCaptureDevice: "you must call unlockForConfiguration()" once the lock was obtained.
+        Configuration.Resource(
+            label: "capture-device configuration lock", acquire: ["lockForConfiguration"],
+            release: ["unlockForConfiguration"], holds: .receiver),
+        Configuration.Resource(
+            label: "pixel-buffer base-address lock", acquire: ["CVPixelBufferLockBaseAddress"],
+            release: ["CVPixelBufferUnlockBaseAddress"], holds: .firstArgument),
     ]
 
     /// What the analysis found in one function.
@@ -141,7 +154,8 @@ struct ResourceRule {
                 label: resource.label, acquire: Set(resource.acquire),
                 acquireByName: index == all.count - 1 && !acquirers.isEmpty ? byName : [:],
                 release: Set(resource.release),
-                releaseMethods: Set(resource.release.map { $0.split(separator: ".").last.map(String.init) ?? $0 }))
+                releaseMethods: Set(resource.release.map { $0.split(separator: ".").last.map(String.init) ?? $0 }),
+                holds: resource.holds)
         }
         severity = configuration.severity(of: .leakOnExit)
         negativeIsInvalid = negative
@@ -156,7 +170,11 @@ struct ResourceRule {
     }
 
     private func analyzeInScope(_ unit: FunctionUnit) -> Outcome {
-        guard CallFinder.calls(in: unit.statements).contains(where: { acquiredKind(of: $0) != nil }) else {
+        guard
+            CallFinder.calls(in: unit.statements).contains(where: {
+                acquiredKind(of: $0) != nil || pairedAcquisition(of: $0) != nil
+            })
+        else {
             return Outcome()
         }
         let graph = ControlFlowGraph.build(statements: unit.statements, converter: unit.converter)
@@ -177,7 +195,8 @@ struct ResourceRule {
         for node in graph.nodes where !infos[node.id].acquisitions.isEmpty {
             guard let entry = states[node.id] else { continue }
             let gone = infos[node.id].released.union(infos[node.id].transferred)
-            for acquisition in infos[node.id].acquisitions where !acquisition.viaBinding {
+            for acquisition in infos[node.id].acquisitions
+            where !acquisition.viaBinding && kinds[acquisition.kind].holds == .result {
                 for lost in entry.sorted(by: { $0.site < $1.site })
                 where lost.name == acquisition.name && lost.site != node.id && !gone.contains(lost.name)
                     && reported.insert(lost.site).inserted
@@ -202,7 +221,7 @@ struct ResourceRule {
         return graph.nodes.contains { node in
             guard let value = (node.syntax?.as(ReturnStmtSyntax.self))?.expression else { return false }
             if let name = SyntaxFacts.bareName(value) {
-                return states[node.id]?.contains(where: { $0.name == name }) == true
+                return states[node.id]?.contains(where: { $0.name == name && kinds[$0.kind].holds == .result }) == true
             }
             guard let call = SyntaxFacts.stripped(value).as(FunctionCallExprSyntax.self) else { return false }
             return acquiredKind(of: CallSite(node: call)) != nil
@@ -268,8 +287,13 @@ struct ResourceRule {
         _ node: ControlFlowGraph.Node, _ edge: ControlFlowGraph.Edge, _ state: Set<Held>, _ info: NodeInfo
     ) -> Set<Held> {
         var next = state
-        let gone = info.released.union(info.transferred)
-        if !gone.isEmpty { next = next.filter { !gone.contains($0.name) } }
+        if !info.released.isEmpty || !info.transferred.isEmpty {
+            // A pair is closed only by its release: passing the receiver or the argument on does not end it.
+            next = next.filter { held in
+                !info.released.contains(held.name)
+                    && !(kinds[held.kind].holds == .result && info.transferred.contains(held.name))
+            }
+        }
         if edge.kind != .thrown {
             for acquisition in info.acquisitions where !acquisition.viaBinding || edge.kind == .whenTrue {
                 next = next.filter { $0.name != acquisition.name }
@@ -318,11 +342,44 @@ struct ResourceRule {
                 let base = scope.type(of: call.base)
                 if candidates.contains(where: { $0.accepts(count: count, base: base) }) { return index }
             }
-            guard kind.acquire.contains(call.callee) else { continue }
+            guard kind.holds == .result, kind.acquire.contains(call.callee) else { continue }
             if isLocalMethod(call) || call.arguments.count < (Self.minimumArguments[call.last] ?? 0) { continue }
             return index
         }
         return nil
+    }
+
+    /// The name a paired call makes held and its kind: the receiver of `x.begin()`, or the first argument of
+    /// `lock(x, …)`, when it is a simple name (`self.` dropped). Nil for anything else, which no release could match.
+    fileprivate func pairedAcquisition(of call: CallSite) -> (name: String, kind: Int)? {
+        for (index, kind) in kinds.enumerated() {
+            switch kind.holds {
+            case .result:
+                continue
+            case .receiver:
+                guard kind.acquire.contains(call.last), !call.base.isEmpty else { continue }
+                let receiver = Self.simpleName(call.base)
+                guard let receiver else { return nil }
+                return (receiver, index)
+            case .firstArgument:
+                guard kind.acquire.contains(call.callee), let first = call.arguments.first,
+                    let name = SyntaxFacts.bareName(Self.unwrapped(first.expression))
+                else { continue }
+                return (name, index)
+            }
+        }
+        return nil
+    }
+
+    /// `x`, or `self.x` as `x`; nil for a dotted path through another value.
+    static func simpleName(_ base: String) -> String? {
+        let name = base.hasPrefix("self.") ? String(base.dropFirst(5)) : base
+        return name.isEmpty || name.contains(".") ? nil : name
+    }
+
+    static func unwrapped(_ expression: ExprSyntax) -> ExprSyntax {
+        if let forced = expression.as(ForceUnwrapExprSyntax.self) { return forced.expression }
+        return expression
     }
 
     /// A bare call to a name the file declares is that method, not the system call of the same name.
@@ -369,6 +426,25 @@ struct ResourceRule {
             return .skipChildren
         }
 
+        override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+            // Only a pair whose result is discarded: code that checks the result handles a failure the rule cannot
+            // correlate with the release, so it is left alone.
+            if Self.isStatement(node), let paired = rule.pairedAcquisition(of: CallSite(node: node)) {
+                found.append(Acquisition(name: paired.name, kind: paired.kind, viaBinding: false))
+            }
+            return .visitChildren
+        }
+
+        /// A call that is a statement of its own, behind `try` or `await` at most.
+        private static func isStatement(_ node: FunctionCallExprSyntax) -> Bool {
+            var current = Syntax(node)
+            while let parent = current.parent, parent.is(TryExprSyntax.self) || parent.is(AwaitExprSyntax.self) {
+                current = parent
+            }
+            return current.parent?.is(CodeBlockItemSyntax.self) == true
+                || current.parent?.is(ExpressionStmtSyntax.self) == true
+        }
+
         /// `try?` makes the result optional, which this rule follows only through a binding.
         private static func isOptionalTry(_ expression: ExprSyntax) -> Bool {
             expression.as(TryExprSyntax.self)?.questionOrExclamationMark?.text == "?"
@@ -407,6 +483,14 @@ struct ResourceRule {
         default: how = "reaches its end"
         }
         let label = kinds[leaked.kind].label
+        if kinds[leaked.kind].holds != .result {
+            return Finding(
+                rule: .leakOnExit, severity: severity, path: unit.path, line: site.line,
+                column: site.syntax.map(unit.column(of:)) ?? 1,
+                function: unit.name,
+                message: "the \(label) on `\(leaked.name)` begun here is not ended when the function \(how)",
+                witness: steps)
+        }
         return Finding(
             rule: .leakOnExit, severity: severity, path: unit.path, line: site.line,
             column: site.syntax.map(unit.column(of:)) ?? 1,
@@ -440,10 +524,12 @@ final class UseClassifier: SyntaxVisitor {
         let call = CallSite(node: node)
         if releaseCallees.contains(call.callee) {
             for argument in call.arguments {
-                if let name = SyntaxFacts.bareName(argument.expression) { released.insert(name) }
+                if let name = SyntaxFacts.bareName(ResourceRule.unwrapped(argument.expression)) {
+                    released.insert(name)
+                }
             }
-        } else if releaseMethods.contains(call.last), !call.base.isEmpty, !call.base.contains(".") {
-            released.insert(call.base)
+        } else if releaseMethods.contains(call.last), let receiver = ResourceRule.simpleName(call.base) {
+            released.insert(receiver)
         } else if !ResourceRule.isNonOwning(call.last) {
             for argument in call.arguments {
                 if let name = SyntaxFacts.bareName(argument.expression) { transferred.insert(name) }

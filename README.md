@@ -7,7 +7,7 @@ when a later step throws, whether a file replacement is durable, whether text is
 
 | Rule | Obligation | Shape |
 | --- | --- | --- |
-| `leak-on-exit` | a descriptor or handle (`open`, `FileDescriptor.open`, `socket`, `opendir`, `fopen`, and any function of the corpus that returns one) is closed, handed on or returned on every path out | pairing |
+| `leak-on-exit` | a descriptor or handle (`open`, `FileDescriptor.open`, `socket`, `opendir`, `fopen`, and any function of the corpus that returns one) is closed, handed on or returned on every path out; a pair begun on a receiver or an argument (`session.beginConfiguration()`, `device.lockForConfiguration()`, `CVPixelBufferLockBaseAddress(b, …)`) is ended on every path out | pairing |
 | `replace-not-durable` | a `rename` over a file comes after a flush of the bytes written and before a flush of the directory | ordering |
 | `cut-then-decode` | `String(decoding: bytes.prefix(n), as: UTF8.self)` does not split a character at the cut | bounds |
 
@@ -53,6 +53,13 @@ project that no target compiles is reported in a note. `includeTests: true` and 
   "exclude": ["/Generated/"],
   "includeTests": false }
 ```
+
+A resource's `holds` says what its acquiring call makes held: `result` (the default) is the value it returns, which a
+release call or method on it closes, or which is handed on by passing, storing or returning it; `receiver` is the simple
+name the call is made on, `x.begin()` … `x.end()`, with `acquire` and `release` given as method names; `firstArgument`
+is the first argument, `lock(x, …)` … `unlock(x, …)`. A pair is ended only by its release, never handed on, and is
+followed only when its opening call is a statement of its own: code that checks the result handles a failure the rule
+cannot tie to the release. A receiver reached through another value (`camera.session`) is not followed either.
 
 A name the file does not know, or JSON that does not parse, fails the run; it never quietly turns a rule off. Only
 production code is analysed unless a region is included.

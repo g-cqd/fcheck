@@ -82,6 +82,39 @@ import Testing
             ).isEmpty)
     }
 
+    @Test func `a lock whose result the code checks is left alone, since a failed lock holds nothing`() {
+        // maintastic's Data+CMSampleBuffer.serializePixelBuffer.
+        #expect(
+            leaks(
+                """
+                func serialize(_ buffer: CVPixelBuffer) -> Data? {
+                    let status = CVPixelBufferLockBaseAddress(buffer, .readOnly)
+                    if status != kCVReturnSuccess {
+                        return nil
+                    }
+                    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+                    return Data()
+                }
+                """
+            ).isEmpty)
+    }
+
+    @Test func `a force-unwrapped argument is the same name when it is locked and unlocked`() {
+        // maintastic's CVPixelBufferImageExtension.
+        #expect(
+            leaks(
+                """
+                func make() -> CVPixelBuffer? {
+                    var pixelBuffer: CVPixelBuffer?
+                    CVPixelBufferLockBaseAddress(pixelBuffer!, CVPixelBufferLockFlags(rawValue: 0))
+                    draw()
+                    CVPixelBufferUnlockBaseAddress(pixelBuffer!, CVPixelBufferLockFlags(rawValue: 0))
+                    return pixelBuffer
+                }
+                """
+            ).isEmpty)
+    }
+
     @Test func `a pair of the project is configured with holds receiver`() throws {
         let configuration = Configuration(
             resources: [.init(label: "batch", acquire: ["beginBatch"], release: ["endBatch"], holds: .receiver)])
