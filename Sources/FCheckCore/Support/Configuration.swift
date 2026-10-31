@@ -35,6 +35,19 @@ public struct Configuration: Codable, Sendable, Equatable {
             self.release = release
             self.negativeIsInvalid = negativeIsInvalid
         }
+
+        private enum CodingKeys: String, CodingKey {
+            case label, acquire, release, negativeIsInvalid
+        }
+
+        /// `negativeIsInvalid` may be left out, and is then false, as the initializer has it.
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            label = try values.decode(String.self, forKey: .label)
+            acquire = try values.decode([String].self, forKey: .acquire)
+            release = try values.decode([String].self, forKey: .release)
+            negativeIsInvalid = try values.decodeIfPresent(Bool.self, forKey: .negativeIsInvalid) ?? false
+        }
     }
 
     public var disable: [RuleID]
