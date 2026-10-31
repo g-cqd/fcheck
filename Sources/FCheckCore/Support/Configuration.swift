@@ -28,16 +28,34 @@ public struct Configuration: Codable, Sendable, Equatable {
         public var release: [String]
         /// Whether a negative result is a failed acquisition, as for a C `open`.
         public var negativeIsInvalid: Bool
+        /// What the acquiring call makes held (analyzerkit roadmap 0063).
+        public var holds: Holds
 
-        public init(label: String, acquire: [String], release: [String], negativeIsInvalid: Bool = false) {
+        /// What an acquiring call makes held.
+        public enum Holds: String, Codable, Sendable, Equatable {
+            /// The value it returns, released by a release call or method on it, or handed on.
+            case result
+            /// Its receiver, a simple name: `session.beginConfiguration()` … `session.commitConfiguration()`.
+            /// `acquire` and `release` are method names; passing the receiver to a call does not hand it on.
+            case receiver
+            /// Its first argument, a simple name: `CVPixelBufferLockBaseAddress(b, f)` …
+            /// `CVPixelBufferUnlockBaseAddress(b, f)`; passing it to a call does not hand it on.
+            case firstArgument
+        }
+
+        public init(
+            label: String, acquire: [String], release: [String], negativeIsInvalid: Bool = false,
+            holds: Holds = .result
+        ) {
             self.label = label
             self.acquire = acquire
             self.release = release
             self.negativeIsInvalid = negativeIsInvalid
+            self.holds = holds
         }
 
         private enum CodingKeys: String, CodingKey {
-            case label, acquire, release, negativeIsInvalid
+            case label, acquire, release, negativeIsInvalid, holds
         }
 
         /// `negativeIsInvalid` may be left out, and is then false, as the initializer has it.
@@ -47,6 +65,7 @@ public struct Configuration: Codable, Sendable, Equatable {
             acquire = try values.decode([String].self, forKey: .acquire)
             release = try values.decode([String].self, forKey: .release)
             negativeIsInvalid = try values.decodeIfPresent(Bool.self, forKey: .negativeIsInvalid) ?? false
+            holds = try values.decodeIfPresent(Holds.self, forKey: .holds) ?? .result
         }
     }
 
