@@ -33,6 +33,17 @@ import Testing
         #expect(configuration.flush == ["persist"] && configuration.exclude == ["/Gen/"] && configuration.includeTests)
     }
 
+    @Test func `the README's example reads, a resource without negativeIsInvalid taking false`() throws {
+        let readme = try String(
+            contentsOf: URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../README.md"),
+            encoding: .utf8)
+        let example = try #require(
+            readme.firstMatch(of: /`\.fcheck\.json`, for example:\n\n```json\n(?<json>[\s\S]*?)```/)?.json)
+        let configuration = try load(String(example))
+        #expect(configuration.resources == [.init(label: "socket", acquire: ["makeSocket"], release: ["destroy"])])
+        #expect(configuration.resources.first?.negativeIsInvalid == false)
+    }
+
     @Test func `a rule name that does not exist, or bad JSON, fails instead of turning a rule off`() {
         #expect(throws: Configuration.Failure.self) { try load("{ \"severity\": { \"leak\": \"error\" } }") }
         #expect(throws: Configuration.Failure.self) { try load("{ nope") }
