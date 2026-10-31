@@ -177,8 +177,16 @@ public struct Analyzer: Sendable {
     public func analyze(
         bytes: [UInt8], path: String, acquirers: Set<String>, classification: ProjectClassification? = nil
     ) -> FileResult {
-        let tree = Parser.parse(source: String(decoding: bytes, as: UTF8.self))
-        let region = classification?.classify(path, tree: tree).region.rawValue ?? 0
+        let parsed = Parser.parse(source: String(decoding: bytes, as: UTF8.self))
+        let region = classification?.classify(path, tree: parsed).region.rawValue ?? 0
+        // Under a define, the inactive `#if` clauses are blanked in place and the file parsed again (ADR-0029).
+        let conditions = configuration.conditions
+        let tree =
+            conditions.isRequested
+            ? conditions.activeSource(bytes, tree: parsed).map {
+                Parser.parse(source: String(decoding: $0, as: UTF8.self))
+            }
+                ?? parsed : parsed
         // Every walk below recurses once per level of the tree; past the limit the file is listed, not walked.
         if SyntaxDepth.exceeds(tree) {
             return FileResult(

@@ -33,9 +33,6 @@ struct Analyze: AsyncParsableCommand {
 
     func run() async throws {
         for deprecation in input.deprecations { note(deprecation.message(tool: ToolInfo.name)) }
-        if !input.defines.isEmpty {
-            note("fcheck: note: --define has no effect yet: fcheck reads every #if clause")
-        }
         // Read before the analysis, so a bad path fails with 78 without the analysis cost.
         let newSince = try output.reportNewSince.map { path in try loadBaseline(path) }
         let configuration: Configuration
@@ -143,6 +140,8 @@ struct Analyze: AsyncParsableCommand {
             for line in resolved.sources.verboseLines(tool: ToolInfo.name) { note(line) }
         }
         var configuration = resolved.configuration
+        // `--define` adds to the configuration's defines (ADR-0029).
+        configuration.defines = Array(Set(configuration.defines).union(input.defines)).sorted()
         // The command line's region lists replace the file's, side by side.
         if input.includeRegions != nil || input.excludeRegions != nil {
             let given = try RegionSelection(include: input.includeRegions, exclude: input.excludeRegions)
