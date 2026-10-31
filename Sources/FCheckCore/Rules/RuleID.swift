@@ -45,6 +45,12 @@ public enum RuleID: String, CaseIterable, Codable, Sendable {
             function of the corpus that returns one. Handing on is passing the handle to a call that is not a plain \
             system call on it, storing it, or returning it. Add to the list in `.fcheck.json` under `resources`.
 
+            A pair begun on a receiver or an argument is ended the same way, by its release only: \
+            `session.beginConfiguration()` by `commitConfiguration()`, `device.lockForConfiguration()` by \
+            `unlockForConfiguration()`, `CVPixelBufferLockBaseAddress(b, …)` by `CVPixelBufferUnlockBaseAddress(b, …)`. \
+            Passing the receiver to a call does not end it. Configure more with `"holds": "receiver"` or \
+            `"firstArgument"`. Fix: end it in a `defer` right after it begins.
+
             Fix: close it in a `defer` placed right after the acquisition, or close it in the branch that fails.
             """
         case .replaceNotDurable:
@@ -63,7 +69,9 @@ public enum RuleID: String, CaseIterable, Codable, Sendable {
             """
             `String(decoding: bytes.prefix(n), as: UTF8.self)` replaces an incomplete character at the cut with U+FFFD, \
             so valid text printed by a program is shown to a reader with replacement characters in it. The same holds for \
-            a suffix and for any slice whose bounds are counts of bytes.
+            a suffix and for any slice whose bounds are counts of bytes. `String(data:encoding: .utf8)`, \
+            `String(bytes:encoding: .utf8)` and `String(s.utf16.prefix(n))` of such a cut return nil instead, so the \
+            whole text is lost, usually behind a `?? ""`.
 
             Fix: move the cut back to a character boundary (a byte that is not `0b10xxxxxx`), or decode the whole \
             buffer and cut the string.
