@@ -586,9 +586,14 @@ final class UseClassifier: SyntaxVisitor {
             }
         } else if releaseMethods.contains(call.last), let receiver = ResourceRule.simpleName(call.base) {
             released.insert(receiver)
-        } else if !ResourceRule.isNonOwning(call.last) {
-            for argument in call.arguments {
-                if let name = SyntaxFacts.bareName(argument.expression) { transferred.insert(name) }
+        } else {
+            // A method called on what was acquired: a descriptor or a stream has none, so this is an object that wraps the
+            // handle and lets go of it itself (`lock.release()`), and what it does is not this rule's to follow.
+            if let receiver = ResourceRule.simpleName(call.base) { transferred.insert(receiver) }
+            if !ResourceRule.isNonOwning(call.last) {
+                for argument in call.arguments {
+                    if let name = SyntaxFacts.bareName(argument.expression) { transferred.insert(name) }
+                }
             }
         }
         return .visitChildren
