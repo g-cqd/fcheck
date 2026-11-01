@@ -21,6 +21,9 @@ struct DecodeCutRule {
         /// Variables a scan for a delimiter gave: `tab` in `guard let tab = record.firstIndex(of: 9)`. A slice that
         /// starts or stops at one is cut where the delimiter is, an ASCII byte, which no character straddles.
         var searched: Set<String> = []
+        /// Variables that hold the length a call wrote into a buffer (`count` in `let count = read(fd, &buffer, size)`):
+        /// the bytes end there, they were not cut.
+        var filled: Set<String> = []
         /// What the function compared a prefix or a suffix with (`byteOrderMark` in `starts(with: byteOrderMark)`): removing
         /// as many bytes as it has removes the whole marker.
         var matched: Set<String> = []
@@ -28,7 +31,7 @@ struct DecodeCutRule {
         static func of(_ statements: some SyntaxProtocol) -> Boundaries {
             let finder = BoundaryFinder()
             finder.walk(statements)
-            return Boundaries(searched: finder.searched, matched: finder.matched)
+            return Boundaries(searched: finder.searched, filled: finder.filled, matched: finder.matched)
         }
     }
 
@@ -215,6 +218,14 @@ private final class CutScanner: SyntaxVisitor {
         let mentions = NameCollector()
         mentions.walk(bound)
         return !boundaries.searched.isDisjoint(with: mentions.names)
+            || !boundaries.filled.isDisjoint(with: mentions.names)
+    }
+
+    /// Whether `argument` is, or converts, the length a call returned for the bytes it wrote.
+    private func isFilledLength(_ argument: ExprSyntax) -> Bool {
+        let mentions = NameCollector()
+        mentions.walk(argument)
+        return !boundaries.filled.isDisjoint(with: mentions.names)
     }
 
     /// `n.count` where `n` was matched as a prefix or suffix: the length of a marker that is there.
@@ -231,8 +242,10 @@ private final class CutScanner: SyntaxVisitor {
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         if operation == nil, let access = node.calledExpression.as(MemberAccessExprSyntax.self) {
             let name = access.declName.baseName.text
-            if let first = node.arguments.first, isMatchedMarkerLength(first.expression) {
-                // Removes or keeps the marker the function just matched: whole characters.
+            if let first = node.arguments.first,
+                isMatchedMarkerLength(first.expression) || isFilledLength(first.expression)
+            {
+                // Removes or keeps the marker the function just matched, or ends where the buffer's fill ends: whole characters.
             } else if ["prefix", "suffix"].contains(name),
                 node.trailingClosure == nil, let first = node.arguments.first, first.label?.text != "while"
             {
@@ -296,19 +309,24 @@ private final class NameCollector: SyntaxVisitor {
 /// Where a function's cuts fall: the variables a delimiter scan gave, and the markers it matched.
 private final class BoundaryFinder: SyntaxVisitor {
     private(set) var searched: Set<String> = []
+    private(set) var filled: Set<String> = []
     private(set) var matched: Set<String> = []
 
     private static let scans: Set<String> = ["firstIndex", "lastIndex", "firstRange", "lastRange", "range"]
     private static let matches: Set<String> = ["starts", "hasPrefix", "hasSuffix"]
+    private static let fillCalls: Set<String> = [
+        "read", "pread", "recv", "recvfrom", "fread", "readlink", "proc_pidpath", "getcwd", "gethostname",
+    ]
 
     init() { super.init(viewMode: .sourceAccurate) }
 
     override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
         for binding in node.bindings {
             if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-                let value = binding.initializer?.value, Self.scans(value)
+                let value = binding.initializer?.value
             {
-                searched.insert(name)
+                if Self.scans(value) { searched.insert(name) }
+                if Self.fills(value) { filled.insert(name) }
             }
         }
         return .visitChildren
@@ -329,6 +347,11 @@ private final class BoundaryFinder: SyntaxVisitor {
             matched.insert(first.expression.trimmedDescription.filter { !$0.isWhitespace })
         }
         return .visitChildren
+    }
+
+    /// Whether `expression` calls something that fills a buffer and returns how much.
+    private static func fills(_ expression: ExprSyntax) -> Bool {
+        CallFinder.calls(in: expression).contains { fillCalls.contains($0.last) }
     }
 
     /// Whether `expression` is, or calls, a search for a position.
