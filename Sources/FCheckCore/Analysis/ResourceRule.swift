@@ -188,8 +188,13 @@ struct ResourceRule {
     func analyze(_ unit: FunctionUnit) -> Outcome {
         var scoped = self
         scoped.scope = TypeScope(unit)
+        scoped.locals = VariableNames.declared(in: unit.statements)
         return scoped.analyzeInScope(unit)
     }
+
+    /// The variables the function declares: an assignment to any other bare name writes a member or a global, which stores
+    /// the handle, not a handle of this function.
+    private var locals: Set<String> = []
 
     private func analyzeInScope(_ unit: FunctionUnit) -> Outcome {
         guard
@@ -339,9 +344,17 @@ struct ResourceRule {
         guard let sequence = expression.as(SequenceExprSyntax.self) else { return nil }
         let elements = Array(sequence.elements)
         guard elements.count == 3, let name = SyntaxFacts.bareName(elements[0]),
-            let op = elements[1].as(BinaryOperatorExprSyntax.self)?.operator.text,
-            let value = literal(elements[2])
+            let op = elements[1].as(BinaryOperatorExprSyntax.self)?.operator.text
         else { return nil }
+        // A `FILE *` or `DIR *` that fopen or opendir could not give is nil.
+        if elements[2].is(NilLiteralExprSyntax.self) {
+            switch op {
+            case "!=": return (name, true)
+            case "==": return (name, false)
+            default: return nil
+            }
+        }
+        guard let value = literal(elements[2]) else { return nil }
         switch (op, value) {
         case (">=", 0), (">", -1), ("!=", -1): return (name, true)
         case ("<", 0), ("==", -1), ("<=", -1): return (name, false)
@@ -401,7 +414,9 @@ struct ResourceRule {
 
     /// `x`, or `self.x` as `x`; nil for a dotted path through another value.
     static func simpleName(_ base: String) -> String? {
-        let name = base.hasPrefix("self.") ? String(base.dropFirst(5)) : base
+        var name = base.hasPrefix("self.") ? String(base.dropFirst(5)) : base
+        // `device?.lockForConfiguration()` and `device!.unlock…()` name the same receiver as `device.…()`.
+        while name.last == "?" || name.last == "!" { name.removeLast() }
         return name.isEmpty || name.contains(".") ? nil : name
     }
 
@@ -446,7 +461,8 @@ struct ResourceRule {
         override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
             let elements = Array(node.elements)
             if elements.count >= 3, elements[1].is(AssignmentExprSyntax.self),
-                let name = SyntaxFacts.bareName(elements[0]), !Self.isOptionalTry(elements[2]),
+                let name = SyntaxFacts.bareName(elements[0]), rule.locals.contains(name),
+                !Self.isOptionalTry(elements[2]),
                 let kind = rule.acquiredKindOfExpression(elements[2])
             {
                 found.append(Acquisition(name: name, kind: kind, viaBinding: false))
@@ -603,4 +619,25 @@ final class UseClassifier: SyntaxVisitor {
             for element in tuple.elements { handOn(element.expression) }
         }
     }
+}
+
+/// The names `let` and `var` declare in a function, closures and nested functions left out.
+private final class VariableNames: SyntaxVisitor {
+    private var names: Set<String> = []
+
+    static func declared(in syntax: some SyntaxProtocol) -> Set<String> {
+        let visitor = VariableNames(viewMode: .sourceAccurate)
+        visitor.walk(syntax)
+        return visitor.names
+    }
+
+    override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+        for binding in node.bindings {
+            if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text { names.insert(name) }
+        }
+        return .skipChildren
+    }
+
+    override func visit(_ node: ClosureExprSyntax) -> SyntaxVisitorContinueKind { .skipChildren }
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind { .skipChildren }
 }
