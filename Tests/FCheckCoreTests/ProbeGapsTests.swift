@@ -172,4 +172,27 @@ import Testing
         let source = "func f(_ data: Data, _ n: Int) -> String { String(decoding: data.dropFirst(n), as: UTF8.self) }"
         #expect(found(source, .cutThenDecode).count == 1)
     }
+
+    @Test(arguments: [
+        "let count = read(fd, &buffer, buffer.count)\nguard count > 0 else { return \"\" }\nreturn String(decoding: buffer.prefix(count), as: UTF8.self)",
+        "let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))\nreturn String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)",
+        "let received = recv(fd, &buffer, buffer.count, 0)\nreturn String(decoding: buffer[..<received], as: UTF8.self)",
+        "let n = try await read(fd, into: &buffer)\nreturn String(decoding: buffer.prefix(n), as: UTF8.self)",
+    ])
+    func `the length a call returned for the bytes it wrote is where they end, not a cut`(body: String) {
+        #expect(
+            found("func f(_ fd: Int32, _ pid: Int32, _ buffer: inout [UInt8]) -> String {\n\(body)\n}", .cutThenDecode)
+                .isEmpty
+        )
+    }
+
+    @Test func `a limit the program computed is still a cut`() {
+        let source = """
+            func f(_ buffer: [UInt8]) -> String {
+                let limit = computeLimit()
+                return String(decoding: buffer.prefix(limit), as: UTF8.self)
+            }
+            """
+        #expect(found(source, .cutThenDecode).count == 1)
+    }
 }
