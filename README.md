@@ -1,109 +1,59 @@
 # fcheck
 
-Checks that Swift code keeps its obligations on **every path out of a function**, including the paths a `try` and a
-`defer` take. It answers a question the compiler, SwiftLint, swift-format, arcleak, deadwood and dolly do not: not
-whether code is well formed, unused, leaking references or copied, but whether a function that opens something closes it
-when a later step throws, whether a file replacement is durable, whether text is cut inside a character.
-
-| Rule | Obligation | Shape |
-| --- | --- | --- |
-| `leak-on-exit` | a descriptor or handle (`open`, `FileDescriptor.open`, `socket`, `opendir`, `fopen`, and any function of the corpus that returns one) is closed, handed on or returned on every path out; a pair begun on a receiver or an argument (`session.beginConfiguration()`, `device.lockForConfiguration()`, `CVPixelBufferLockBaseAddress(b, …)`) is ended on every path out | pairing |
-| `replace-not-durable` | a `rename` over a file comes after a flush of the bytes written and before a flush of the directory | ordering |
-| `cut-then-decode` | `String(decoding: bytes.prefix(n), as: UTF8.self)` does not split a character at the cut (it would become U+FFFD), nor `String(data:encoding: .utf8)`, `String(bytes:encoding: .utf8)` or `String(s.utf16.prefix(n))` (they would return nil, losing the whole text) | bounds |
-
-Every finding carries the path through the function that breaks the obligation, as the lines it passes, and says how sure
-it is (`L0`: path analysis on the function's control-flow graph; exact for the paths it models, silent about the rest).
-SARIF output carries the path as a code flow.
-
-```sh
-fcheck analyze Sources                      # xcode-style diagnostics, notes for the witness path
-fcheck analyze Sources --format sarif --strict
-fcheck analyze Sources --rules leak-on-exit,replace-not-durable
-fcheck rules                                # the catalogue
-fcheck explain replace-not-durable          # the obligation and the usual fix (also `fcheck rules <id>`)
-```
-
-`--baseline FILE` and `--write-baseline FILE` adopt a rule on code that already breaks it; `--only FILE` and `--only-from`
-report one file of a corpus that is still analysed whole, and `--report-new-since BASELINE` adds the findings outside
-that scope which the base branch's baseline does not hold; `--relative-to DIR` shortens paths; `--exclude-path PATTERN`
-leaves paths out; `--verbose`, `--quiet` and `--timings` control stderr; `--cache-path DIR` (the cache's root directory)
-and `--no-cache` control the per-file cache, which is keyed by content, the configuration and the build of the tool.
-`--define NAME` is accepted and has no effect yet: fcheck reads every `#if` clause. Flags,
-exit codes and the report schema are the ones arcleak, dolly and deadwood use: `0` passed; `1` an error finding, or with
-`--strict` a warning; `64` usage (a bad argument, a missing path, no Swift file); `70` no file could be read; `74` a
-`--write-baseline` file could not be written; `78` an invalid configuration or baseline. A note never fails a run.
-
-## Configuration
-
-Configuration is read from one directory: the current one if it holds `.swift-analyzers.json` or `.fcheck.json`, else the nearest directory holding one, up to the repository root. `.swift-analyzers.json` is shared by arcleak, deadwood, dolly and fcheck: its top level holds `exclude`, `includeRegions`, `excludeRegions`, `defines` and `platforms`, and a `"fcheck"` section holds fcheck's own keys. The shared top level, the section and `.fcheck.json` apply in that order: `exclude` lists add up, objects merge key by key, other values replace. An unknown key, or a key given twice, exits `78` and names the file and the key. `--config FILE` reads that one file instead, in the shared format when it is named `.swift-analyzers.json`.
-`includeRegions` and `excludeRegions` (or `--include-regions` and `--exclude-regions`) choose which code besides production
-is analysed: `test`, `generated`, `script` (package manifests, files a build phase runs), `preview`, `debug`, `mock`, or
-`all`; excluding wins. A file's region comes from its package or Xcode project first (a test target is test code wherever
-it lives), then from its content (a test-framework import, a generator's header), then from path conventions; a file in a
-project that no target compiles is reported in a note. `includeTests: true` and `--include-tests` (deprecated) mean
-`test,generated`.
-
-`.fcheck.json`, for example:
-
-```json
-{ "disable": ["cut-then-decode"],
-  "severity": { "leak-on-exit": "error" },
-  "resources": [ { "label": "socket", "acquire": ["makeSocket"], "release": ["destroy"] } ],
-  "flush": ["persist"],
-  "exclude": ["/Generated/"],
-  "includeTests": false }
-```
-
-A resource's `holds` says what its acquiring call makes held: `result` (the default) is the value it returns, which a
-release call or method on it closes, or which is handed on by passing, storing or returning it; `receiver` is the simple
-name the call is made on, `x.begin()` … `x.end()`, with `acquire` and `release` given as method names; `firstArgument`
-is the first argument, `lock(x, …)` … `unlock(x, …)`. A pair is ended only by its release, never handed on, and is
-followed only when its opening call is a statement of its own: code that checks the result handles a failure the rule
-cannot tie to the release. A receiver reached through another value (`camera.session`) is not followed either.
-
-A name the file does not know, or JSON that does not parse, fails the run; it never quietly turns a rule off. Only
-production code is analysed unless a region is included.
-
-## Suppression
+Checks that Swift code keeps its obligations on **every path out of a function**, including the paths a `try` and a `defer` take.
+The compiler, SwiftLint and the other analyzers ask whether code is well formed, unused, leaking references or copied. fcheck asks
+whether a function that opens something closes it when a later step throws, whether replacing a file is durable, and whether text
+is cut inside a character.
 
 ```swift
-// @fc:accept leak-on-exit -- the caller closes it        this line and the next
-// @fc:accept:this   // @fc:accept:next   // @fc:disable [rules] … // @fc:enable
+func size(of path: String) throws -> Int {
+    let fd = open(path, O_RDONLY)
+    try check(path)  // leak-on-exit: if this throws, `fd` is never closed
+    var info = stat()
+    fstat(fd, &info)
+    close(fd)
+    return Int(info.st_size)
+}
 ```
 
-`@fcheck:` is the long form. A directive that names only rules this version does not know suppresses nothing.
+## What it checks
 
-## What it found in ask
+| Rule | The obligation |
+| --- | --- |
+| `leak-on-exit` | A descriptor or handle is closed, handed on or returned on every path out; a begun pair is ended. |
+| `replace-not-durable` | A `rename` over a file comes after a flush of the bytes and before a flush of the directory. |
+| `cut-then-decode` | Bytes cut at a count are not decoded in a way that splits a character. |
 
-Run on ask at `9f5b040`, before its maintainers fixed what a model of the code had found:
+Every finding carries the path through the function that breaks the obligation, and says how sure it is. See [Rules](docs/rules.md).
 
-- `SessionFile.begin` does not close the descriptor `writeExclusively` returns when `SessionLock.adopt` throws (leak-on-exit,
-  found through the helper, which the tool learned acquires);
-- `Compaction.clipped` and `OutputBuffer.text` cut bytes and decode them (cut-then-decode), both confirmed faults;
-- `ProjectTrust.save` renames bytes it never flushed, and `AtomicFile.replace` does not flush the directory after its
-  rename, in the store that holds a single-use token (replace-not-durable); both are still open on ask's `main`.
+## Install
 
-On ask's `main` it reports those two and nothing else. On arcleak, dolly, deadwood, analyzerkit, modeler, aemi, AemiJSON and
-Keystone it reports nothing; on TerminalKit it reports one handled case (`PackedCell.character`, a prefix of a value's own
-bytes), which a `// @fc:accept` would record.
-
-## Limits
-
-Syntactic: it has no types. A handle is recognised by the name of the call that acquires it, so a project's own
-acquirer is found only when a function of the corpus returns what it acquired, or is named under `resources`. Handing a
-handle to any call that is not a plain system call on it counts as handing it on, which favours silence over noise. A
-value that went through another call before it was decoded is not followed. Closures and nested functions are not
-entered as part of the function that contains them. `try?` results are followed only through `if let` and `guard let`.
-The obligations that need an interleaving or arithmetic (`check-then-act`, `continuation-once`, `arith-trap`) are not built;
-see `modeler`'s `docs/PROPOSAL-fcheck.md` for the plan.
-
-## Develop
+Download an archive from the [releases](https://github.com/g-cqd/fcheck/releases), or build with Swift 6.4 on macOS 15 or later,
+or Linux:
 
 ```sh
-swift build --build-tests
-swift test --skip-build
+swift build -c release
+cp .build/release/fcheck /usr/local/bin/
 ```
 
-Swift 6.4, strict concurrency and strict memory safety, warnings as errors. The control-flow graph and its dataflow
-solver are analyzerkit's `ControlFlow`; the corpus scan, the cache and the SARIF helpers are `SourceCorpus`, `CorpusScan`
-and `ReportSupport`.
+## Use
+
+```sh
+fcheck analyze Sources                       # diagnostics in Xcode's format, with the witness path as notes
+fcheck analyze Sources --format sarif --strict
+fcheck analyze Sources --rules leak-on-exit,replace-not-durable
+fcheck explain replace-not-durable           # the obligation and the usual fix
+```
+
+`--baseline` and `--write-baseline` adopt a rule on code that already breaks it. `--only` and `--only-from` report some files of a
+corpus that is still analyzed whole. Exit codes and reports are those of [the other analyzers](docs/README.md).
+
+## Learn more
+
+[User guide](docs/README.md): rules, configuration, suppression.
+
+fcheck is one of a family of analyzers with the same options and reports:
+[arcleak](https://github.com/g-cqd/arcleak), [deadwood](https://github.com/g-cqd/deadwood), [dolly](https://github.com/g-cqd/dolly)
+and [modeler](https://github.com/g-cqd/modeler).
+
+[MIT](LICENSE)
