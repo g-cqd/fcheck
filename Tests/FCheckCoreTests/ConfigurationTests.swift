@@ -34,13 +34,15 @@ import Testing
         #expect(configuration.flush == ["persist"] && configuration.exclude == ["/Gen/"] && configuration.includeTests)
     }
 
-    @Test func `the README's example reads, a resource without negativeIsInvalid taking false`() throws {
-        let readme = try String(
-            contentsOf: URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../README.md"),
+    @Test func `the configuration guide's example reads, a resource without negativeIsInvalid taking false`() throws {
+        let guide = try String(
+            contentsOf: URL(filePath: #filePath).deletingLastPathComponent().appending(
+                path: "../../docs/configuration.md"
+            ),
             encoding: .utf8
         )
         let example = try #require(
-            readme.firstMatch(of: /`\.fcheck\.json`, for example:\n\n```json\n(?<json>[\s\S]*?)```/)?.json
+            guide.firstMatch(of: /```json\n(?<json>[\s\S]*?)```/)?.json
         )
         let configuration = try load(String(example))
         #expect(configuration.resources == [.init(label: "socket", acquire: ["makeSocket"], release: ["destroy"])])
