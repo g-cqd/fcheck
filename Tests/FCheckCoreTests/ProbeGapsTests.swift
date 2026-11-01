@@ -195,4 +195,28 @@ import Testing
             """
         #expect(found(source, .cutThenDecode).count == 1)
     }
+
+    // MARK: - leak-on-exit: a wrapper that releases itself
+
+    @Test func `a lock object returned by a function of the corpus and let go by its own method is not leaked`() {
+        // ask's CredentialFile.settleSecrets(): takeLock() returns the descriptor's wrapper, which release() closes.
+        let source = """
+            func settle() throws {
+                let lock = try takeLock()
+                defer { lock.release() }
+                try mayThrow()
+            }
+            """
+        #expect(analyze(source, rules: [.leakOnExit], acquirers: ["takeLock"]).isEmpty)
+    }
+
+    @Test func `a handle returned by a function of the corpus and never let go is still reported`() {
+        let source = """
+            func settle() throws {
+                let fd = try takeDescriptor()
+                try mayThrow()
+            }
+            """
+        #expect(analyze(source, rules: [.leakOnExit], acquirers: ["takeDescriptor"]).count == 1)
+    }
 }
