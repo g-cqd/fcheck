@@ -135,4 +135,41 @@ import Testing
     func `a cut moved back to a character boundary first is the fix, not the bug`(body: String) {
         #expect(found("func f(_ data: Data) -> String {\n\(body)\n}", .cutThenDecode).isEmpty)
     }
+
+    // MARK: - cut-then-decode: bounds that are not counts
+
+    @Test(arguments: [
+        "guard let tab = record.firstIndex(of: 9) else { return nil }\nreturn String(decoding: record[record.index(after: tab)...], as: UTF8.self)",
+        "guard let colon = record.firstIndex(of: UInt8(ascii: \":\")) else { return nil }\nreturn String(decoding: record[..<colon], as: UTF8.self)",
+        "let newline = record.lastIndex(of: 10) ?? record.endIndex\nreturn String(decoding: record[..<newline], as: UTF8.self)",
+        "if let space = record.firstIndex(where: { $0 == 32 }) { return String(decoding: record[space...], as: UTF8.self) }\nreturn nil",
+    ])
+    func `a slice that starts or ends where a scan found an ASCII delimiter is cut at a boundary`(body: String) {
+        #expect(found("func f(_ record: Data) -> String? {\n\(body)\n}", .cutThenDecode).isEmpty)
+    }
+
+    @Test func `a slice cut at a count beside a scan for a delimiter is still reported`() {
+        let source = """
+            func f(_ record: Data) -> String? {
+                guard let tab = record.firstIndex(of: 9) else { return nil }
+                _ = tab
+                return String(decoding: record[..<limit], as: UTF8.self)
+            }
+            """
+        #expect(found(source, .cutThenDecode).count == 1)
+    }
+
+    @Test(arguments: [
+        "let body = data.starts(with: byteOrderMark) ? data.dropFirst(byteOrderMark.count) : data\nreturn String(decoding: body, as: UTF8.self)",
+        "var body = data\nif body.starts(with: Self.bom) { body = body.dropFirst(Self.bom.count) }\nreturn String(decoding: body, as: UTF8.self)",
+        "if text.hasPrefix(marker) { return String(decoding: data.dropFirst(marker.count), as: UTF8.self) }\nreturn \"\"",
+    ])
+    func `dropping a marker that was just matched removes whole characters`(body: String) {
+        #expect(found("func f(_ data: Data) -> String {\n\(body)\n}", .cutThenDecode).isEmpty)
+    }
+
+    @Test func `dropping a count that nothing matched is still reported`() {
+        let source = "func f(_ data: Data, _ n: Int) -> String { String(decoding: data.dropFirst(n), as: UTF8.self) }"
+        #expect(found(source, .cutThenDecode).count == 1)
+    }
 }
