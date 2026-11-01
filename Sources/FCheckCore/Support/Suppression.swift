@@ -30,8 +30,6 @@ public struct Directive: Codable, Sendable, Equatable {
         self.reason = reason
     }
 
-    func covers(_ rule: RuleID) -> Bool { rules.isEmpty || rules.contains(rule) }
-
     static let namespaces = ["fc:", "fcheck:"]
 
     /// The directive in `comment`, or nil when it is not one.
