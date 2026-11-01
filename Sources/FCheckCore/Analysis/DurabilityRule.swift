@@ -55,8 +55,10 @@ struct DurabilityRule {
         let directories = Self.directoryDescriptors(in: unit.statements)
         let events = graph.nodes.map { eventsOf($0, directories: directories) }
         let states = graph.solve(
-            initial: State(), join: Self.join,
-            transfer: { node, edge, state in Self.apply(events[node.id], node: node, edge: edge, state) })
+            initial: State(),
+            join: Self.join,
+            transfer: { node, edge, state in Self.apply(events[node.id], node: node, edge: edge, state) }
+        )
 
         var findings: [Finding] = []
         for node in graph.nodes where events[node.id].contains(where: { if case .rename = $0 { true } else { false } })
@@ -69,7 +71,8 @@ struct DurabilityRule {
         for exit in graph.nodes where exit.kind == .exit(.returned) || exit.kind == .exit(.fellOff) {
             guard let pending = states[exit.id]?.pending else { continue }
             findings.append(
-                directoryNotFlushed(rename: pending, exit: exit.id, graph: graph, states: states, unit: unit))
+                directoryNotFlushed(rename: pending, exit: exit.id, graph: graph, states: states, unit: unit)
+            )
         }
         return findings
     }
@@ -187,7 +190,10 @@ struct DurabilityRule {
     }
 
     private static func apply(
-        _ events: [Event], node: ControlFlowGraph.Node, edge: ControlFlowGraph.Edge, _ state: State
+        _ events: [Event],
+        node: ControlFlowGraph.Node,
+        edge: ControlFlowGraph.Edge,
+        _ state: State
     ) -> State {
         var next = state
         for event in events {
@@ -224,26 +230,40 @@ struct DurabilityRule {
     {
         let route = graph.path(from: written, to: rename.id) ?? [written, rename.id]
         return Finding(
-            rule: .replaceNotDurable, severity: severity, path: unit.path, line: rename.line,
-            column: rename.syntax.map(unit.column(of:)) ?? 1, function: unit.name,
+            rule: .replaceNotDurable,
+            severity: severity,
+            path: unit.path,
+            line: rename.line,
+            column: rename.syntax.map(unit.column(of:)) ?? 1,
+            function: unit.name,
             message:
                 "`rename` replaces its destination with bytes written at line \(graph.nodes[written].line) that are not flushed on this path: a crash can leave an empty or partial file",
-            witness: steps(route, graph))
+            witness: steps(route, graph)
+        )
     }
 
     private func directoryNotFlushed(
-        rename: Int, exit: Int, graph: ControlFlowGraph, states: [State?], unit: FunctionUnit
+        rename: Int,
+        exit: Int,
+        graph: ControlFlowGraph,
+        states: [State?],
+        unit: FunctionUnit
     ) -> Finding {
         let route = graph.path(from: rename, to: exit, allowing: { states[$0]?.pending == rename }) ?? [rename, exit]
         let ends = graph.nodes[exit].kind == .exit(.returned) ? "returns" : "ends"
         let at = route.dropLast().last.map { graph.nodes[$0].line } ?? 0
         let node = graph.nodes[rename]
         return Finding(
-            rule: .replaceNotDurable, severity: severity, path: unit.path, line: node.line,
-            column: node.syntax.map(unit.column(of:)) ?? 1, function: unit.name,
+            rule: .replaceNotDurable,
+            severity: severity,
+            path: unit.path,
+            line: node.line,
+            column: node.syntax.map(unit.column(of:)) ?? 1,
+            function: unit.name,
             message:
                 "the directory is not flushed after this `rename` before the function \(ends)\(ends == "returns" ? " at line \(at)" : ""): a crash can bring the old file back",
-            witness: steps(route, graph))
+            witness: steps(route, graph)
+        )
     }
 
     private func steps(_ route: [Int], _ graph: ControlFlowGraph) -> [Finding.Step] {

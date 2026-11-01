@@ -34,7 +34,9 @@ import Testing
             let paths = files.keys.map { root + "/" + $0 }
             #expect(try await Analyzer().analyze(paths: paths, cache: nil).findings.count == 1)
             let all = try await Analyzer(configuration: Configuration(includeTests: true)).analyze(
-                paths: paths, cache: nil)
+                paths: paths,
+                cache: nil
+            )
             #expect(all.findings.count == 3)
         }
     }
@@ -43,7 +45,9 @@ import Testing
         try await withCorpus(["Vendor/A.swift": leaking, "B.swift": leaking]) { root in
             let paths = [root + "/Vendor/A.swift", root + "/B.swift"]
             let report = try await Analyzer(configuration: Configuration(exclude: ["/Vendor/"])).analyze(
-                paths: paths, cache: nil)
+                paths: paths,
+                cache: nil
+            )
             #expect(report.findings.count == 1 && report.analyzedFileCount == 1)
         }
     }
@@ -51,7 +55,9 @@ import Testing
     @Test func `a file that cannot be read is reported degraded and the rest still runs`() async throws {
         try await withCorpus(["A.swift": leaking]) { root in
             let report = try await Analyzer().analyze(
-                paths: [root + "/A.swift", root + "/Missing.swift"], cache: nil)
+                paths: [root + "/A.swift", root + "/Missing.swift"],
+                cache: nil
+            )
             #expect(report.findings.count == 1 && report.degraded.keys.contains { $0.hasSuffix("Missing.swift") })
         }
     }
@@ -63,7 +69,8 @@ import Testing
             #expect(
                 report.findings.map { "\(URL(fileURLWithPath: $0.path).lastPathComponent):\($0.line)" } == [
                     "A.swift:2", "A.swift:6", "B.swift:2",
-                ])
+                ]
+            )
         }
     }
 
@@ -87,7 +94,9 @@ import Testing
             let path = root + "/A.swift"
             let all = try await Analyzer().analyze(paths: [path], cache: cache)
             let off = try await Analyzer(configuration: Configuration(disable: [.leakOnExit])).analyze(
-                paths: [path], cache: cache)
+                paths: [path],
+                cache: cache
+            )
             let on = try await Analyzer().analyze(paths: [path], cache: cache)
             #expect(all.findings.count == 1 && off.findings.isEmpty && on.findings.count == 1)
             #expect(off.cacheHits == 1 && on.cacheHits == 1)

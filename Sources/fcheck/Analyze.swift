@@ -17,7 +17,8 @@ import SystemPackage
 /// `fcheck analyze`, on analyzerkit's shared option groups (ADR-0019): Input, Output, Rules, Cache, in that order.
 struct Analyze: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Analyze Swift files or directories (default: the current directory).")
+        abstract: "Analyze Swift files or directories (default: the current directory)."
+    )
 
     @OptionGroup(title: OptionGroupTitle.input) var input: InputOptions
     @OptionGroup(title: OptionGroupTitle.output) var output: OutputOptions
@@ -57,7 +58,9 @@ struct Analyze: AsyncParsableCommand {
         }
 
         var report = try await Analyzer(configuration: configuration).analyze(
-            paths: files, cache: cache.noCache ? nil : cacheLocation(files))
+            paths: files,
+            cache: cache.noCache ? nil : cacheLocation(files)
+        )
         let root = RepositoryRoot.common(of: report.findings.map(\.path)) ?? RepositoryRoot.common(of: files)
         let fingerprint = { (finding: Finding) in finding.fingerprint(root: root) }
 
@@ -70,9 +73,16 @@ struct Analyze: AsyncParsableCommand {
             if let newSince {
                 let known = Set(newSince.fingerprints)
                 baselineMatchesNothing = NewSince.matchesNothing(
-                    inScope + outOfScope, in: known, fingerprint: fingerprint)
+                    inScope + outOfScope,
+                    in: known,
+                    fingerprint: fingerprint
+                )
                 let promotion = NewSince.promote(
-                    inScope: inScope, outOfScope: outOfScope, notIn: known, fingerprint: fingerprint)
+                    inScope: inScope,
+                    outOfScope: outOfScope,
+                    notIn: known,
+                    fingerprint: fingerprint
+                )
                 report.findings = Self.sorted(promotion.reported)
                 promoted = promotion.promoted
             }
@@ -101,14 +111,23 @@ struct Analyze: AsyncParsableCommand {
         let relative = output.relativeTo.map(SourcePath.canonical)
         write(
             try ReportFormatter.render(
-                report, format: OutputFormat(output.format), root: root, relativeTo: relative, baselined: baselined,
-                timings: output.timings, verbose: output.verbose),
-            to: .standardOutput)
+                report,
+                format: OutputFormat(output.format),
+                root: root,
+                relativeTo: relative,
+                baselined: baselined,
+                timings: output.timings,
+                verbose: output.verbose
+            ),
+            to: .standardOutput
+        )
         summarize(report, baselined: baselined)
         // ADR-0018: an error fails the run, a warning only under --strict; reading no file at all is a failure too.
         let status = RunOutcome.status(
-            severities: report.findings.map(\.severity), strict: output.strict,
-            analyzedFileCount: report.analyzedFileCount - report.degraded.count, skippedFileCount: report.degraded.count
+            severities: report.findings.map(\.severity),
+            strict: output.strict,
+            analyzedFileCount: report.analyzedFileCount - report.degraded.count,
+            skippedFileCount: report.degraded.count
         )
         if status != .success { throw ExitCode(status.rawValue) }
     }
@@ -134,8 +153,10 @@ struct Analyze: AsyncParsableCommand {
     private func loadConfiguration() throws -> Configuration {
         // --config, or the configuration directory's shared and own files (ADR-0020).
         let resolved = try Configuration.resolve(
-            explicit: input.config, currentDirectory: FileManager.default.currentDirectoryPath,
-            analyzedPaths: input.paths)
+            explicit: input.config,
+            currentDirectory: FileManager.default.currentDirectoryPath,
+            analyzedPaths: input.paths
+        )
         if output.verbose {
             for line in resolved.sources.verboseLines(tool: ToolInfo.name) { note(line) }
         }
@@ -147,7 +168,8 @@ struct Analyze: AsyncParsableCommand {
             let given = try RegionSelection(include: input.includeRegions, exclude: input.excludeRegions)
             configuration.regions = RegionSelection(
                 include: input.includeRegions == nil ? configuration.regions.include : given.include,
-                exclude: input.excludeRegions == nil ? configuration.regions.exclude : given.exclude)
+                exclude: input.excludeRegions == nil ? configuration.regions.exclude : given.exclude
+            )
         }
         if let wanted = rules.rules {
             let ids = try wanted.map { name -> RuleID in
@@ -195,7 +217,10 @@ struct Analyze: AsyncParsableCommand {
         let root =
             cache.cachePath.map(SourcePath.absolute)
             ?? CacheLocation.defaultRoot(
-                tool: ToolInfo.name, environment: environment, home: environment["HOME"] ?? "/tmp")
+                tool: ToolInfo.name,
+                environment: environment,
+                home: environment["HOME"] ?? "/tmp"
+            )
         let workspace =
             ProjectLayout.discover(paths: input.paths)?.root ?? RepositoryRoot.common(of: files)
             ?? FileManager.default.currentDirectoryPath
@@ -222,7 +247,8 @@ struct Analyze: AsyncParsableCommand {
             "fcheck: \(report.findings.count) finding(s) (\(errors) error(s), \(warnings) warning(s)) in "
                 + "\(report.analyzedFileCount) file(s)\(ReportSummary.notChecked(report.degraded.count)); "
                 + "\(report.suppressed.count) suppressed, \(baselined) baselined; cache: "
-                + "\(report.cacheHits) reused, \(report.cacheMisses) parsed")
+                + "\(report.cacheHits) reused, \(report.cacheMisses) parsed"
+        )
     }
 }
 

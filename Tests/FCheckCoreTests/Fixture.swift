@@ -3,7 +3,10 @@ import Foundation
 
 /// The findings of one in-memory source file.
 func analyze(
-    _ source: String, rules: Set<RuleID>? = nil, configuration: Configuration = .default, acquirers: Set<String> = []
+    _ source: String,
+    rules: Set<RuleID>? = nil,
+    configuration: Configuration = .default,
+    acquirers: Set<String> = []
 ) -> [Finding] {
     Analyzer(configuration: configuration)
         .analyze(bytes: Array(source.utf8), path: "T.swift", acquirers: acquirers).findings

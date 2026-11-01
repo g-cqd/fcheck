@@ -13,7 +13,9 @@ import Testing
                 Directive.parse(
                     comment:
                         "/* @\(prefix)accept:this leak-on-exit, cut-then-decode leak-on-exit future -- reviewed */",
-                    line: 7))
+                    line: 7
+                )
+            )
             #expect(parsed.kind == .acceptThis)
             #expect(parsed.line == 7)
             #expect(parsed.reason == "reviewed")

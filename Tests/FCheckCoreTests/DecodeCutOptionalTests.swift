@@ -23,19 +23,22 @@ import Testing
                     return String(data: head, encoding: .utf8) ?? ""
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("`prefix` at line 2") && found.line == 3)
     }
 
     @Test func `UTF-16 code units cut and turned back into a string are reported`() throws {
         let found = try #require(
-            cuts("func f(_ s: String, _ n: Int) -> String? {\n String(s.utf16.prefix(n))\n}").first)
+            cuts("func f(_ s: String, _ n: Int) -> String? {\n String(s.utf16.prefix(n))\n}").first
+        )
         #expect(found.message.contains("UTF-16") && found.message.contains("nil"))
     }
 
     @Test func `another encoding, a whole value, or characters cut are not`() {
         #expect(
-            cuts("func f(_ d: Data, _ n: Int) -> String? {\n String(data: d.prefix(n), encoding: .ascii)\n}").isEmpty)
+            cuts("func f(_ d: Data, _ n: Int) -> String? {\n String(data: d.prefix(n), encoding: .ascii)\n}").isEmpty
+        )
         #expect(cuts("func f(_ d: Data) -> String? {\n String(data: d, encoding: .utf8)\n}").isEmpty)
         #expect(cuts("func f(_ s: String, _ n: Int) -> String {\n String(s.prefix(n))\n}").isEmpty)
     }

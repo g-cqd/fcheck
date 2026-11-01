@@ -91,25 +91,41 @@ struct ResourceRule {
             acquire: [
                 "open", "Darwin.open", "Glibc.open", "FileDescriptor.open", "System.FileDescriptor.open", "openat",
                 "dup", "Darwin.dup", "dup2", "socket", "Darwin.socket", "accept", "mkstemp", "shm_open", "pipe",
-            ], release: ["close", "Darwin.close", "Glibc.close"], negativeIsInvalid: true),
+            ],
+            release: ["close", "Darwin.close", "Glibc.close"],
+            negativeIsInvalid: true
+        ),
         Configuration.Resource(
-            label: "directory stream", acquire: ["opendir", "Darwin.opendir", "fdopendir"],
-            release: ["closedir", "Darwin.closedir"]),
+            label: "directory stream",
+            acquire: ["opendir", "Darwin.opendir", "fdopendir"],
+            release: ["closedir", "Darwin.closedir"]
+        ),
         Configuration.Resource(
-            label: "file stream", acquire: ["fopen", "Darwin.fopen", "fdopen", "tmpfile"],
-            release: ["fclose", "Darwin.fclose"]),
+            label: "file stream",
+            acquire: ["fopen", "Darwin.fopen", "fdopen", "tmpfile"],
+            release: ["fclose", "Darwin.fclose"]
+        ),
         // AVCaptureSession: changes take effect at the outermost commit; one never committed leaves the session in
         // configuration, and the next begin nests inside it.
         Configuration.Resource(
-            label: "capture-session configuration", acquire: ["beginConfiguration"],
-            release: ["commitConfiguration"], holds: .receiver),
+            label: "capture-session configuration",
+            acquire: ["beginConfiguration"],
+            release: ["commitConfiguration"],
+            holds: .receiver
+        ),
         // AVCaptureDevice: "you must call unlockForConfiguration()" once the lock was obtained.
         Configuration.Resource(
-            label: "capture-device configuration lock", acquire: ["lockForConfiguration"],
-            release: ["unlockForConfiguration"], holds: .receiver),
+            label: "capture-device configuration lock",
+            acquire: ["lockForConfiguration"],
+            release: ["unlockForConfiguration"],
+            holds: .receiver
+        ),
         Configuration.Resource(
-            label: "pixel-buffer base-address lock", acquire: ["CVPixelBufferLockBaseAddress"],
-            release: ["CVPixelBufferUnlockBaseAddress"], holds: .firstArgument),
+            label: "pixel-buffer base-address lock",
+            acquire: ["CVPixelBufferLockBaseAddress"],
+            release: ["CVPixelBufferUnlockBaseAddress"],
+            holds: .firstArgument
+        ),
     ]
 
     /// What the analysis found in one function.
@@ -142,7 +158,11 @@ struct ResourceRule {
         if !acquirers.isEmpty {
             all.append(
                 Configuration.Resource(
-                    label: "handle", acquire: [], release: ["close", "Darwin.close", "Glibc.close"]))
+                    label: "handle",
+                    acquire: [],
+                    release: ["close", "Darwin.close", "Glibc.close"]
+                )
+            )
         }
         var byName: [String: [Acquirer]] = [:]
         for key in acquirers.sorted() {
@@ -151,11 +171,13 @@ struct ResourceRule {
         }
         kinds = all.enumerated().map { index, resource in
             Kind(
-                label: resource.label, acquire: Set(resource.acquire),
+                label: resource.label,
+                acquire: Set(resource.acquire),
                 acquireByName: index == all.count - 1 && !acquirers.isEmpty ? byName : [:],
                 release: Set(resource.release),
                 releaseMethods: Set(resource.release.map { $0.split(separator: ".").last.map(String.init) ?? $0 }),
-                holds: resource.holds)
+                holds: resource.holds
+            )
         }
         severity = configuration.severity(of: .leakOnExit)
         negativeIsInvalid = negative
@@ -180,8 +202,10 @@ struct ResourceRule {
         let graph = ControlFlowGraph.build(statements: unit.statements, converter: unit.converter)
         let infos = graph.nodes.map { info(for: $0) }
         let states = graph.solve(
-            initial: Set<Held>(), join: { $0.union($1) },
-            transfer: { node, edge, state in transfer(node, edge, state, infos[node.id]) })
+            initial: Set<Held>(),
+            join: { $0.union($1) },
+            transfer: { node, edge, state in transfer(node, edge, state, infos[node.id]) }
+        )
 
         var outcome = Outcome()
         var reported: Set<Int> = []
@@ -202,7 +226,8 @@ struct ResourceRule {
                     && reported.insert(lost.site).inserted
                 {
                     outcome.findings.append(
-                        finding(for: lost, exit: node.id, graph: graph, states: states, unit: unit, reassigned: true))
+                        finding(for: lost, exit: node.id, graph: graph, states: states, unit: unit, reassigned: true)
+                    )
                 }
             }
         }
@@ -284,7 +309,10 @@ struct ResourceRule {
     }
 
     private func transfer(
-        _ node: ControlFlowGraph.Node, _ edge: ControlFlowGraph.Edge, _ state: Set<Held>, _ info: NodeInfo
+        _ node: ControlFlowGraph.Node,
+        _ edge: ControlFlowGraph.Edge,
+        _ state: Set<Held>,
+        _ info: NodeInfo
     ) -> Set<Held> {
         var next = state
         if !info.released.isEmpty || !info.transferred.isEmpty {
@@ -457,7 +485,11 @@ struct ResourceRule {
     // MARK: - Reporting
 
     private func finding(
-        for leaked: Held, exit: Int, graph: ControlFlowGraph, states: [Set<Held>?], unit: FunctionUnit,
+        for leaked: Held,
+        exit: Int,
+        graph: ControlFlowGraph,
+        states: [Set<Held>?],
+        unit: FunctionUnit,
         reassigned: Bool = false
     ) -> Finding {
         let site = graph.nodes[leaked.site]
@@ -485,20 +517,28 @@ struct ResourceRule {
         let label = kinds[leaked.kind].label
         if kinds[leaked.kind].holds != .result {
             return Finding(
-                rule: .leakOnExit, severity: severity, path: unit.path, line: site.line,
+                rule: .leakOnExit,
+                severity: severity,
+                path: unit.path,
+                line: site.line,
                 column: site.syntax.map(unit.column(of:)) ?? 1,
                 function: unit.name,
                 message: "the \(label) on `\(leaked.name)` begun here is not ended when the function \(how)",
-                witness: steps)
+                witness: steps
+            )
         }
         return Finding(
-            rule: .leakOnExit, severity: severity, path: unit.path, line: site.line,
+            rule: .leakOnExit,
+            severity: severity,
+            path: unit.path,
+            line: site.line,
             column: site.syntax.map(unit.column(of:)) ?? 1,
             function: unit.name,
             message:
                 "the \(label) `\(leaked.name)` acquired here is not closed, handed on or returned when "
                 + (reassigned ? "it \(how)" : "the function \(how)"),
-            witness: steps)
+            witness: steps
+        )
     }
 
     private static func firstLine(of syntax: Syntax) -> String {
