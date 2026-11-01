@@ -16,6 +16,22 @@ struct DecodeCutRule {
     ]
     private static let maximumHops = 3
 
+    /// What the function says about where its cuts fall.
+    struct Boundaries {
+        /// Variables a scan for a delimiter gave: `tab` in `guard let tab = record.firstIndex(of: 9)`. A slice that
+        /// starts or stops at one is cut where the delimiter is, an ASCII byte, which no character straddles.
+        var searched: Set<String> = []
+        /// What the function compared a prefix or a suffix with (`byteOrderMark` in `starts(with: byteOrderMark)`): removing
+        /// as many bytes as it has removes the whole marker.
+        var matched: Set<String> = []
+
+        static func of(_ statements: some SyntaxProtocol) -> Boundaries {
+            let finder = BoundaryFinder()
+            finder.walk(statements)
+            return Boundaries(searched: finder.searched, matched: finder.matched)
+        }
+    }
+
     let severity: Severity
 
     init(configuration: Configuration) {
@@ -28,13 +44,21 @@ struct DecodeCutRule {
         guard !decodes.isEmpty else { return [] }
         let text = unit.statements.description
         if Self.boundaryHandling.contains(where: text.contains) { return [] }
+        let boundaries = Boundaries.of(unit.statements)
         let locals = Self.table(AssignmentFinder.assignments(in: unit.statements))
         let members = unit.typeName.flatMap { definitions.byType[$0] } ?? [:]
 
         var findings: [Finding] = []
         for (decode, form) in decodes {
             guard let argument = decode.arguments.first?.expression,
-                let cut = cut(in: argument, locals: locals, members: members, unit: unit, hops: 0)
+                let cut = cut(
+                    in: argument,
+                    locals: locals,
+                    members: members,
+                    boundaries: boundaries,
+                    unit: unit,
+                    hops: 0
+                )
             else { continue }
             let line = unit.line(of: decode.node)
             findings.append(
@@ -123,10 +147,11 @@ struct DecodeCutRule {
         in expression: ExprSyntax,
         locals: [String: [ExprSyntax]],
         members: [String: [MemberDefinitions.Definition]],
+        boundaries: Boundaries,
         unit: FunctionUnit,
         hops: Int
     ) -> Cut? {
-        let scan = CutScanner()
+        let scan = CutScanner(boundaries: boundaries)
         // A value that went through a call that is not a view of the same bytes may have been cut at a boundary.
         if let call = SyntaxFacts.stripped(expression).as(FunctionCallExprSyntax.self),
             !Self.isTransparent(CallSite(node: call))
@@ -144,7 +169,14 @@ struct DecodeCutRule {
         guard hops < Self.maximumHops else { return nil }
         for name in scan.names {
             for definition in locals[name] ?? [] {
-                if let found = cut(in: definition, locals: locals, members: members, unit: unit, hops: hops + 1) {
+                if let found = cut(
+                    in: definition,
+                    locals: locals,
+                    members: members,
+                    boundaries: boundaries,
+                    unit: unit,
+                    hops: hops + 1
+                ) {
                     return found
                 }
             }
@@ -154,6 +186,7 @@ struct DecodeCutRule {
                     in: definition.expression,
                     locals: inner,
                     members: members,
+                    boundaries: boundaries,
                     unit: unit,
                     hops: hops + 1
                 ) {
@@ -170,7 +203,27 @@ private final class CutScanner: SyntaxVisitor {
     private(set) var operation: String?
     private(set) var names: [String] = []
 
-    init() { super.init(viewMode: .sourceAccurate) }
+    private let boundaries: DecodeCutRule.Boundaries
+
+    init(boundaries: DecodeCutRule.Boundaries) {
+        self.boundaries = boundaries
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    /// Whether `bound` mentions a variable a scan for a delimiter gave.
+    private func isSearched(_ bound: ExprSyntax) -> Bool {
+        let mentions = NameCollector()
+        mentions.walk(bound)
+        return !boundaries.searched.isDisjoint(with: mentions.names)
+    }
+
+    /// `n.count` where `n` was matched as a prefix or suffix: the length of a marker that is there.
+    private func isMatchedMarkerLength(_ argument: ExprSyntax) -> Bool {
+        guard let access = argument.as(MemberAccessExprSyntax.self), access.declName.baseName.text == "count",
+            let base = access.base
+        else { return false }
+        return boundaries.matched.contains(base.trimmedDescription.filter { !$0.isWhitespace })
+    }
 
     /// `prefix(n)` and `suffix(n)`: a window of n bytes. `prefix { … }` and `prefix(while:)` stop at a byte the caller
     /// chose, which is a boundary when it is a NUL or a newline, and `dropFirst` and `dropLast` usually remove a marker
@@ -178,7 +231,9 @@ private final class CutScanner: SyntaxVisitor {
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
         if operation == nil, let access = node.calledExpression.as(MemberAccessExprSyntax.self) {
             let name = access.declName.baseName.text
-            if ["prefix", "suffix"].contains(name),
+            if let first = node.arguments.first, isMatchedMarkerLength(first.expression) {
+                // Removes or keeps the marker the function just matched: whole characters.
+            } else if ["prefix", "suffix"].contains(name),
                 node.trailingClosure == nil, let first = node.arguments.first, first.label?.text != "while"
             {
                 operation = name
@@ -203,10 +258,10 @@ private final class CutScanner: SyntaxVisitor {
     /// A two-sided range `s..<e` where `s` is not 0 is left alone (its bounds are usually where a scan stopped).
     private func isCountSlice(_ expression: ExprSyntax) -> Bool {
         if let postfix = expression.as(PostfixOperatorExprSyntax.self), postfix.operator.text == "..." {
-            return !postfix.expression.is(IntegerLiteralExprSyntax.self)
+            return !postfix.expression.is(IntegerLiteralExprSyntax.self) && !isSearched(postfix.expression)
         }
         if let prefix = expression.as(PrefixOperatorExprSyntax.self), ["..<", "..."].contains(prefix.operator.text) {
-            return true
+            return !isSearched(prefix.expression)
         }
         if let sequence = expression.as(SequenceExprSyntax.self) {
             let elements = Array(sequence.elements)
@@ -214,7 +269,7 @@ private final class CutScanner: SyntaxVisitor {
                 let firstInt = elements[0].as(IntegerLiteralExprSyntax.self), firstInt.literal.text == "0",
                 let op = elements[1].as(BinaryOperatorExprSyntax.self)?.operator.text, ["..<", "..."].contains(op)
             {
-                return true
+                return !isSearched(elements[2])
             }
         }
         return false
@@ -223,5 +278,61 @@ private final class CutScanner: SyntaxVisitor {
     override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
         names.append(node.baseName.text)
         return .skipChildren
+    }
+}
+
+/// The names an expression reads.
+private final class NameCollector: SyntaxVisitor {
+    private(set) var names: Set<String> = []
+
+    init() { super.init(viewMode: .sourceAccurate) }
+
+    override func visit(_ node: DeclReferenceExprSyntax) -> SyntaxVisitorContinueKind {
+        names.insert(node.baseName.text)
+        return .skipChildren
+    }
+}
+
+/// Where a function's cuts fall: the variables a delimiter scan gave, and the markers it matched.
+private final class BoundaryFinder: SyntaxVisitor {
+    private(set) var searched: Set<String> = []
+    private(set) var matched: Set<String> = []
+
+    private static let scans: Set<String> = ["firstIndex", "lastIndex", "firstRange", "lastRange", "range"]
+    private static let matches: Set<String> = ["starts", "hasPrefix", "hasSuffix"]
+
+    init() { super.init(viewMode: .sourceAccurate) }
+
+    override func visit(_ node: VariableDeclSyntax) -> SyntaxVisitorContinueKind {
+        for binding in node.bindings {
+            if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+                let value = binding.initializer?.value, Self.scans(value)
+            {
+                searched.insert(name)
+            }
+        }
+        return .visitChildren
+    }
+
+    override func visit(_ node: OptionalBindingConditionSyntax) -> SyntaxVisitorContinueKind {
+        if let name = node.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+            let value = node.initializer?.value, Self.scans(value)
+        {
+            searched.insert(name)
+        }
+        return .visitChildren
+    }
+
+    override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+        let call = CallSite(node: node)
+        if Self.matches.contains(call.last), let first = node.arguments.first {
+            matched.insert(first.expression.trimmedDescription.filter { !$0.isWhitespace })
+        }
+        return .visitChildren
+    }
+
+    /// Whether `expression` is, or calls, a search for a position.
+    private static func scans(_ expression: ExprSyntax) -> Bool {
+        CallFinder.calls(in: expression).contains { scans.contains($0.last) }
     }
 }
