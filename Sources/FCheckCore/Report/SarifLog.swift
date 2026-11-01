@@ -15,12 +15,15 @@ enum SarifLog {
             return Sarif.Location(
                 physicalLocation: Sarif.PhysicalLocation(
                     artifactLocation: Sarif.ArtifactLocation(path: path, root: root),
-                    region: Sarif.Region(startLine: line, startColumn: converted)),
-                message: text.map(Sarif.Text.init))
+                    region: Sarif.Region(startLine: line, startColumn: converted)
+                ),
+                message: text.map(Sarif.Text.init)
+            )
         }
         let results = report.findings.map { finding in
             Sarif.Result(
-                ruleId: finding.rule.rawValue, level: finding.severity.rawValue,
+                ruleId: finding.rule.rawValue,
+                level: finding.severity.rawValue,
                 message: Sarif.Text(finding.message),
                 locations: [location(finding.path, line: finding.line, column: finding.column, text: nil)],
                 // Always written, `[]` without a witness, as fcheck always has.
@@ -31,21 +34,30 @@ enum SarifLog {
                             Sarif.ThreadFlow(
                                 locations: finding.witness.map {
                                     Sarif.ThreadFlowLocation(
-                                        location: location(finding.path, line: $0.line, column: nil, text: $0.text))
-                                })
+                                        location: location(finding.path, line: $0.line, column: nil, text: $0.text)
+                                    )
+                                }
+                            )
                         ])
                     ],
-                partialFingerprints: ["fcheck/v1": finding.fingerprint(root: root)])
+                partialFingerprints: ["fcheck/v1": finding.fingerprint(root: root)]
+            )
         }
         let rules = RuleID.allCases.map {
             Sarif.Rule(
-                id: $0.rawValue, shortDescription: Sarif.Text($0.summary),
+                id: $0.rawValue,
+                shortDescription: Sarif.Text($0.summary),
                 fullDescription: Sarif.Text($0.explanation),
                 defaultConfiguration: ["level": $0.defaultSeverity.rawValue],
-                properties: ["shape": .string($0.shape), "evidence": .string($0.evidence)])
+                properties: ["shape": .string($0.shape), "evidence": .string($0.evidence)]
+            )
         }
         let driver = Sarif.Driver(
-            name: ToolInfo.name, version: ToolInfo.version, informationUri: ToolInfo.informationURI, rules: rules)
+            name: ToolInfo.name,
+            version: ToolInfo.version,
+            informationUri: ToolInfo.informationURI,
+            rules: rules
+        )
         let log = Sarif.Log(runs: [
             Sarif.Run(tool: Sarif.Tool(driver: driver), invocations: nil, root: root, results: results)
         ])

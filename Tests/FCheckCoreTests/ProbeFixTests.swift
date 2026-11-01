@@ -50,7 +50,8 @@ import Testing
             "import Darwin\nfunc login(_ fd: Int32) {}\nfunc signin(_ fd: Int32) {}\n"
                 + "func viaLogin() { let fd = open(\"a\", O_RDONLY); login(fd) }\n"
                 + "func viaSignin() { let fd = open(\"a\", O_RDONLY); signin(fd) }\n"
-                + "func viaLog() { let fd = open(\"a\", O_RDONLY); logState(fd) }\n")
+                + "func viaLog() { let fd = open(\"a\", O_RDONLY); logState(fd) }\n"
+        )
         #expect(found.map(\.function) == ["viaLog()"], "\(found.map(\.function))")
     }
 
@@ -86,7 +87,8 @@ import Testing
         ] {
             let found = durability(
                 "import Darwin\nfunc save(_ fd: Int32) throws {\n    write(fd, \"x\", 1)\n    fsync(fd)\n"
-                    + "    rename(\"a.tmp\", \"a\")\n    \(flush)\n}\n")
+                    + "    rename(\"a.tmp\", \"a\")\n    \(flush)\n}\n"
+            )
             #expect(found.isEmpty, "\(flush): \(found.map(\.message))")
         }
     }

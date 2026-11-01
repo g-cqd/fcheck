@@ -18,7 +18,8 @@ import Testing
                 try addVideoOutput(session: session)
                 session.commitConfiguration()
             }
-            """)
+            """
+        )
         let only = try #require(found.first)
         #expect(found.count == 1)
         #expect(only.line == 2 && only.message.contains("`session`") && only.message.contains("throws at line 3"))
@@ -44,7 +45,8 @@ import Testing
                     device.unlockForConfiguration()
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
         let found = try #require(
             leaks(
                 """
@@ -54,7 +56,8 @@ import Testing
                     device.unlockForConfiguration()
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("capture-device configuration lock") && found.line == 2)
     }
 
@@ -68,7 +71,8 @@ import Testing
                     CVPixelBufferUnlockBaseAddress(buffer, [])
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("`buffer`") && found.message.contains("pixel-buffer"))
         #expect(
             leaks(
@@ -79,7 +83,8 @@ import Testing
                     try render(into: buffer)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a lock whose result the code checks is left alone, since a failed lock holds nothing`() {
@@ -96,7 +101,8 @@ import Testing
                     return Data()
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a force-unwrapped argument is the same name when it is locked and unlocked`() {
@@ -112,7 +118,8 @@ import Testing
                     return pixelBuffer
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a pair of the project is configured with holds receiver`() throws {
@@ -127,7 +134,8 @@ import Testing
         #expect(
             leaks(
                 "func f() throws {\n camera.session.beginConfiguration()\n try work()\n camera.session.commitConfiguration()\n}"
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `holds reads from the configuration, result by default`() throws {

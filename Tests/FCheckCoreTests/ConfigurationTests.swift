@@ -27,7 +27,8 @@ import Testing
             { "disable": ["cut-then-decode"], "severity": { "leak-on-exit": "error" },
               "resources": [ { "label": "s", "acquire": ["a"], "release": ["r"], "negativeIsInvalid": true } ],
               "flush": ["persist"], "exclude": ["/Gen/"], "includeTests": true }
-            """)
+            """
+        )
         #expect(configuration.disable == [.cutThenDecode] && configuration.severity[.leakOnExit] == .error)
         #expect(configuration.resources == [.init(label: "s", acquire: ["a"], release: ["r"], negativeIsInvalid: true)])
         #expect(configuration.flush == ["persist"] && configuration.exclude == ["/Gen/"] && configuration.includeTests)
@@ -36,9 +37,11 @@ import Testing
     @Test func `the README's example reads, a resource without negativeIsInvalid taking false`() throws {
         let readme = try String(
             contentsOf: URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../README.md"),
-            encoding: .utf8)
+            encoding: .utf8
+        )
         let example = try #require(
-            readme.firstMatch(of: /`\.fcheck\.json`, for example:\n\n```json\n(?<json>[\s\S]*?)```/)?.json)
+            readme.firstMatch(of: /`\.fcheck\.json`, for example:\n\n```json\n(?<json>[\s\S]*?)```/)?.json
+        )
         let configuration = try load(String(example))
         #expect(configuration.resources == [.init(label: "socket", acquire: ["makeSocket"], release: ["destroy"])])
         #expect(configuration.resources.first?.negativeIsInvalid == false)

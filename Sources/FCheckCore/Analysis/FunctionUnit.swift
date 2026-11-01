@@ -106,16 +106,22 @@ final class UnitCollector: SyntaxVisitor {
         let labels = node.signature.parameterClause.parameters.map { $0.firstName.text + ":" }.joined()
         declared.insert(node.name.text)
         add(
-            node.name.text, labels: labels, statements: node.body?.statements,
-            parameters: Self.parameters(node.signature.parameterClause.parameters))
+            node.name.text,
+            labels: labels,
+            statements: node.body?.statements,
+            parameters: Self.parameters(node.signature.parameterClause.parameters)
+        )
         return .visitChildren
     }
 
     override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
         let labels = node.signature.parameterClause.parameters.map { $0.firstName.text + ":" }.joined()
         add(
-            "init", labels: labels, statements: node.body?.statements,
-            parameters: Self.parameters(node.signature.parameterClause.parameters))
+            "init",
+            labels: labels,
+            statements: node.body?.statements,
+            parameters: Self.parameters(node.signature.parameterClause.parameters)
+        )
         return .visitChildren
     }
 
@@ -142,13 +148,18 @@ final class UnitCollector: SyntaxVisitor {
     private static func parameters(_ list: FunctionParameterListSyntax) -> [FunctionUnit.Parameter] {
         list.map { parameter in
             FunctionUnit.Parameter(
-                name: (parameter.secondName ?? parameter.firstName).text, type: parameter.type.trimmedDescription,
-                hasDefault: parameter.defaultValue != nil)
+                name: (parameter.secondName ?? parameter.firstName).text,
+                type: parameter.type.trimmedDescription,
+                hasDefault: parameter.defaultValue != nil
+            )
         }
     }
 
     private func add(
-        _ name: String, labels: String, statements: CodeBlockItemListSyntax?, isProperty: Bool = false,
+        _ name: String,
+        labels: String,
+        statements: CodeBlockItemListSyntax?,
+        isProperty: Bool = false,
         parameters: [FunctionUnit.Parameter] = []
     ) {
         guard let statements else { return }
@@ -156,8 +167,15 @@ final class UnitCollector: SyntaxVisitor {
         let full = (owner.map { $0 + "." } ?? "") + (isProperty ? name : "\(name)(\(labels))")
         units.append(
             FunctionUnit(
-                name: full, simpleName: name, statements: statements, converter: converter, path: path, typeName: owner,
-                parameters: parameters))
+                name: full,
+                simpleName: name,
+                statements: statements,
+                converter: converter,
+                path: path,
+                typeName: owner,
+                parameters: parameters
+            )
+        )
         guard let owner else { return }
         for (member, expression) in AssignmentFinder.assignments(in: statements) {
             definitions.add(.init(expression: expression, statements: statements), member: member, in: owner)

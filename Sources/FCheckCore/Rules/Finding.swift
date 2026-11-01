@@ -25,7 +25,13 @@ public struct Finding: Codable, Sendable, Hashable {
     public let witness: [Step]
 
     public init(
-        rule: RuleID, severity: Severity, path: String, line: Int, column: Int, function: String, message: String,
+        rule: RuleID,
+        severity: Severity,
+        path: String,
+        line: Int,
+        column: Int,
+        function: String,
+        message: String,
         witness: [Step]
     ) {
         self.rule = rule
@@ -57,7 +63,10 @@ public struct FileResult: Codable, Sendable, Equatable {
     public var region: UInt8
 
     public init(
-        findings: [Finding] = [], acquirers: [String] = [], directives: [Directive] = [], degraded: String? = nil,
+        findings: [Finding] = [],
+        acquirers: [String] = [],
+        directives: [Directive] = [],
+        degraded: String? = nil,
         region: UInt8 = 0
     ) {
         self.findings = findings

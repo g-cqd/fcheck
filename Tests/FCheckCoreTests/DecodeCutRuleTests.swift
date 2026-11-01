@@ -6,7 +6,8 @@ import Testing
 
     @Test func `decoding a prefix of the bytes is reported`() throws {
         let found = try #require(
-            cuts("func f(_ b: [UInt8], _ n: Int) -> String {\n String(decoding: b.prefix(n), as: UTF8.self)\n}").first)
+            cuts("func f(_ b: [UInt8], _ n: Int) -> String {\n String(decoding: b.prefix(n), as: UTF8.self)\n}").first
+        )
         #expect(found.line == 2 && found.message.contains("`prefix`"))
     }
 
@@ -20,7 +21,8 @@ import Testing
                     return String(decoding: tail, as: UTF8.self)
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("`suffix` at line 3") && found.line == 4)
     }
 
@@ -37,24 +39,28 @@ import Testing
                     var text: String { String(decoding: head, as: UTF8.self) }
                 }
                 """
-            ).count == 1)
+            ).count == 1
+        )
     }
 
     @Test func `stopping at a byte the caller chose is not a cut at a count`() {
         #expect(
             cuts(
                 "func f(_ b: [CChar]) -> String {\n String(decoding: b.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)\n}"
-            ).isEmpty)
+            ).isEmpty
+        )
         #expect(
             cuts("func f(_ b: [UInt8]) -> String {\n String(decoding: b.prefix(while: { $0 != 10 }), as: UTF8.self)\n}")
-                .isEmpty)
+                .isEmpty
+        )
     }
 
     @Test func `a value that went through another call may have been moved to a boundary`() {
         #expect(
             cuts(
                 "func f(_ b: [UInt8], _ n: Int) -> String {\n String(decoding: wholeCharacters(b.prefix(n)), as: UTF8.self)\n}"
-            ).isEmpty)
+            ).isEmpty
+        )
         #expect(
             cuts(
                 """
@@ -63,13 +69,15 @@ import Testing
                     return String(decoding: head, as: UTF8.self)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a view conversion in between does not hide the cut`() {
         #expect(
             cuts("func f(_ b: [UInt8], _ n: Int) -> String {\n String(decoding: Array(b.prefix(n)), as: UTF8.self)\n}")
-                .count == 1)
+                .count == 1
+        )
     }
 
     @Test func `a function that handles continuation bytes is left alone`() {
@@ -82,7 +90,8 @@ import Testing
                     return String(decoding: b.prefix(end), as: UTF8.self)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `dropping a marker, slicing by a range, and decoding whole bytes are not cuts`() {
@@ -90,7 +99,8 @@ import Testing
         #expect(
             cuts(
                 "func f(_ b: [UInt8], _ s: Int, _ e: Int) -> String {\n String(decoding: b[s ..< e], as: UTF8.self)\n}"
-            ).isEmpty)
+            ).isEmpty
+        )
         #expect(cuts("func f(_ b: [UInt8]) -> String {\n String(decoding: b, as: UTF8.self)\n}").isEmpty)
     }
 
@@ -98,7 +108,8 @@ import Testing
         #expect(
             cuts(
                 "func f(_ n: Int) -> String {\n var a = [UInt8]()\n var b = [UInt8]()\n a = b\n b = a\n return String(decoding: a, as: UTF8.self)\n}"
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `dropFirst and dropLast with count and range subscripts are reported`() {

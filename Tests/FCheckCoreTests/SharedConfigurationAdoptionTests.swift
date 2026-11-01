@@ -37,7 +37,9 @@ import Testing
         for (path, text) in files {
             let url = root.appending(path: path)
             try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try Data(text.utf8).write(to: url)
         }
         return root
@@ -73,11 +75,13 @@ import Testing
         process.waitUntilExit()
         let report = try? JSONSerialization.jsonObject(with: Data(contentsOf: output)) as? [String: Any]
         return Run(
-            status: process.terminationStatus, analyzedFileCount: report?["analyzedFileCount"] as? Int,
+            status: process.terminationStatus,
+            analyzedFileCount: report?["analyzedFileCount"] as? Int,
             reported: tool == "deadwood"
                 ? (report?["findings"] as? [[String: Any]]).map { Set($0.compactMap { $0["path"] as? String }).count }
                 : report?["analyzedFileCount"] as? Int,
-            errors: String(decoding: try Data(contentsOf: errors), as: UTF8.self))
+            errors: String(decoding: try Data(contentsOf: errors), as: UTF8.self)
+        )
     }
 
     @Test func `exclude from the shared top level, the tool's section and the tool's file add up`() throws {

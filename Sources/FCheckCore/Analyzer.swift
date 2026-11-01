@@ -62,7 +62,10 @@ public struct Analyzer: Sendable {
         }
         let classified = ContinuousClock.now
         let scan = try await CorpusScanner.scan(
-            paths: included, cache: cache, identity: identity, salt: configuration.salt + Self.factsFormat
+            paths: included,
+            cache: cache,
+            identity: identity,
+            salt: configuration.salt + Self.factsFormat
         ) { path, bytes in
             Analyzer(configuration: configuration)
                 .analyze(bytes: bytes, path: path, acquirers: [], classification: classification)
@@ -147,12 +150,16 @@ public struct Analyzer: Sendable {
             let known = acquirers
             let location = cache.map {
                 CacheLocation(
-                    root: $0.root, workspace: $0.workspace + "#acquirers-\(round)", maximumBytes: $0.maximumBytes)
+                    root: $0.root,
+                    workspace: $0.workspace + "#acquirers-\(round)",
+                    maximumBytes: $0.maximumBytes
+                )
             }
             let salt =
                 configuration.salt + "|" + ContentFingerprint.of(Array(known.sorted().joined(separator: "\n").utf8))
             let scan = try await CorpusScanner.scan(paths: rerun, cache: location, identity: identity, salt: salt) {
-                path, bytes in
+                path,
+                bytes in
                 Analyzer(configuration: configuration).analyze(bytes: bytes, path: path, acquirers: known)
             }
             for file in scan.files {
@@ -175,7 +182,10 @@ public struct Analyzer: Sendable {
     static let maximumRounds = 16
 
     public func analyze(
-        bytes: [UInt8], path: String, acquirers: Set<String>, classification: ProjectClassification? = nil
+        bytes: [UInt8],
+        path: String,
+        acquirers: Set<String>,
+        classification: ProjectClassification? = nil
     ) -> FileResult {
         let parsed = Parser.parse(source: String(decoding: bytes, as: UTF8.self))
         let region = classification?.classify(path, tree: parsed).region.rawValue ?? 0
@@ -190,7 +200,9 @@ public struct Analyzer: Sendable {
         // Every walk below recurses once per level of the tree; past the limit the file is listed, not walked.
         if SyntaxDepth.exceeds(tree) {
             return FileResult(
-                degraded: "nested deeper than \(SyntaxDepth.defaultLimit) levels; not analysed", region: region)
+                degraded: "nested deeper than \(SyntaxDepth.defaultLimit) levels; not analysed",
+                region: region
+            )
         }
         let converter = SourceLocationConverter(fileName: path, tree: tree)
         let (units, definitions, declared) = UnitCollector.collect(tree, converter: converter, path: path)

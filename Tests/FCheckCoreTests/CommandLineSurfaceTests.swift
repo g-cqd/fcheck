@@ -42,8 +42,10 @@ import Testing
         let err = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return Run(
-            status: process.terminationStatus, output: String(decoding: out, as: UTF8.self),
-            errors: String(decoding: err, as: UTF8.self))
+            status: process.terminationStatus,
+            output: String(decoding: out, as: UTF8.self),
+            errors: String(decoding: err, as: UTF8.self)
+        )
     }
 
     /// A repository root holding `files`.
@@ -56,7 +58,9 @@ import Testing
         for (name, text) in files {
             let url = root.appending(path: name)
             try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try Data(text.utf8).write(to: url)
         }
         try body(root)
@@ -112,7 +116,9 @@ import Testing
     @Test func `exclude-regions wins over include-regions`() throws {
         try Self.workspace(["Sources/A.swift": Self.leak("a"), "Tests/ATests.swift": Self.leak("t")]) { root in
             let run = try Self.run(
-                ["analyze", ".", "--no-cache", "--include-regions", "all", "--exclude-regions", "test"], in: root)
+                ["analyze", ".", "--no-cache", "--include-regions", "all", "--exclude-regions", "test"],
+                in: root
+            )
             #expect(!run.output.contains("ATests.swift"))
         }
     }
@@ -160,10 +166,12 @@ import Testing
             "Sources/A.swift": Self.leak("a"), "Sources/C.swift": "let c = 1\n",
         ]) { root in
             #expect(
-                try Self.run(["analyze", ".", "--no-cache", "--write-baseline", "base.json"], in: root).status == 0)
+                try Self.run(["analyze", ".", "--no-cache", "--write-baseline", "base.json"], in: root).status == 0
+            )
             try Data(Self.leak("b").utf8).write(to: root.appending(path: "Sources/B.swift"))
             let run = try Self.run(
-                ["analyze", ".", "--no-cache", "--only", "Sources/C.swift", "--report-new-since", "base.json"], in: root
+                ["analyze", ".", "--no-cache", "--only", "Sources/C.swift", "--report-new-since", "base.json"],
+                in: root
             )
             #expect(run.output.contains("B.swift"))
             #expect(!run.output.contains("A.swift"))

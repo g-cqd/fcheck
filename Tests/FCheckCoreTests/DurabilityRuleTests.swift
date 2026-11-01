@@ -19,7 +19,8 @@ import Testing
                     try flushDirectory(of: path)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a rename of bytes that were written and not flushed is reported at the write`() throws {
@@ -32,7 +33,8 @@ import Testing
                     try flushDirectory(of: path)
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.line == 3 && found.message.contains("bytes written at line 2"))
         #expect(found.witness.map(\.line) == [2, 3])
     }
@@ -49,7 +51,8 @@ import Testing
                     guard rename(tmp, path) == 0 else { throw E() }
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.line == 6 && found.message.contains("directory is not flushed") && found.message.contains("ends"))
     }
 
@@ -69,7 +72,8 @@ import Testing
                     fsync(dir)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a rename that failed and returns owes nothing, and one that worked and returns does`() {
@@ -84,7 +88,8 @@ import Testing
                 _ = rename(a, b)
                 if strong { fsync(dir) }
             }
-            """)
+            """
+        )
         #expect(found.count == 1)
     }
 
@@ -95,7 +100,8 @@ import Testing
                 durability(
                     "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n \(flush)\n guard rename(a, b) == 0 else { throw E() }\n try flushDirectory(of: b)\n}"
                 ).isEmpty,
-                "\(flush)")
+                "\(flush)"
+            )
             let after = durability(
                 "func f() throws {\n let d = open(a, 0, 0)\n write(d, b, 1)\n \(flush)\n guard rename(a, b) == 0 else { throw E() }\n \(flush)\n}"
             )
@@ -127,7 +133,8 @@ import Testing
                 try other()
                 fsync(dir)
             }
-            """)
+            """
+        )
         // `other()` throwing leaves by the throw exit, which is not a normal end: nothing to report there.
         #expect(found.isEmpty)
     }

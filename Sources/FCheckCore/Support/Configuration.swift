@@ -44,7 +44,10 @@ public struct Configuration: Codable, Sendable, Equatable {
         }
 
         public init(
-            label: String, acquire: [String], release: [String], negativeIsInvalid: Bool = false,
+            label: String,
+            acquire: [String],
+            release: [String],
+            negativeIsInvalid: Bool = false,
             holds: Holds = .result
         ) {
             self.label = label
@@ -101,7 +104,8 @@ public struct Configuration: Codable, Sendable, Equatable {
             regions = RegionSelection(
                 include: newValue
                     ? regions.include.union(Self.testAndGenerated) : regions.include.subtracting(Self.testAndGenerated),
-                exclude: regions.exclude)
+                exclude: regions.exclude
+            )
         }
     }
 
@@ -111,8 +115,14 @@ public struct Configuration: Codable, Sendable, Equatable {
     public func analyzes(_ region: CodeRegion) -> Bool { region.isEmpty || regions.isIncluded(region) }
 
     public init(
-        disable: [RuleID] = [], severity: [RuleID: Severity] = [:], resources: [Resource] = [], flush: [String] = [],
-        exclude: [String] = [], includeTests: Bool = false, defines: [String] = [], platforms: [String] = []
+        disable: [RuleID] = [],
+        severity: [RuleID: Severity] = [:],
+        resources: [Resource] = [],
+        flush: [String] = [],
+        exclude: [String] = [],
+        includeTests: Bool = false,
+        defines: [String] = [],
+        platforms: [String] = []
     ) {
         self.disable = disable
         self.severity = severity
@@ -138,7 +148,10 @@ public struct Configuration: Codable, Sendable, Equatable {
         for (name, level) in named {
             guard let rule = RuleID(rawValue: name) else {
                 throw DecodingError.dataCorruptedError(
-                    forKey: .severity, in: values, debugDescription: "no rule named \(name)")
+                    forKey: .severity,
+                    in: values,
+                    debugDescription: "no rule named \(name)"
+                )
             }
             parsed[rule] = level
         }
@@ -156,7 +169,10 @@ public struct Configuration: Codable, Sendable, Equatable {
             self.regions = try RegionSelection(include: included, exclude: excluded)
         } catch {
             throw DecodingError.dataCorruptedError(
-                forKey: .includeRegions, in: regions, debugDescription: error.description)
+                forKey: .includeRegions,
+                in: regions,
+                debugDescription: error.description
+            )
         }
         if try values.decodeIfPresent(Bool.self, forKey: .includeTests) == true { includeTests = true }
     }
@@ -168,7 +184,9 @@ public struct Configuration: Codable, Sendable, Equatable {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(disable, forKey: .disable)
         try values.encode(
-            Dictionary(uniqueKeysWithValues: severity.map { ($0.key.rawValue, $0.value) }), forKey: .severity)
+            Dictionary(uniqueKeysWithValues: severity.map { ($0.key.rawValue, $0.value) }),
+            forKey: .severity
+        )
         try values.encode(resources, forKey: .resources)
         try values.encode(flush, forKey: .flush)
         try values.encode(exclude, forKey: .exclude)
@@ -205,19 +223,26 @@ public struct Configuration: Codable, Sendable, Equatable {
     /// - Throws: a ``Failure`` for a file that cannot be read or parsed, so a typo never silently turns a rule off.
     /// What the shared configuration reader checks fcheck's keys against (ADR-0020); the shared keys are its own.
     public static let sharedReading = SharedConfiguration.Tool(
-        name: ToolInfo.name, fileName: ".fcheck.json",
-        keys: ["disable", "severity", "resources", "flush", "includeTests"])
+        name: ToolInfo.name,
+        fileName: ".fcheck.json",
+        keys: ["disable", "severity", "resources", "flush", "includeTests"]
+    )
 
     /// The configuration of a run (ADR-0020): `explicit` (`--config`) or the configuration directory's
     /// `.swift-analyzers.json` and `.fcheck.json`, merged, every key checked; the default when there is none.
     /// - Throws: a ``Failure``, so a typo never silently turns a rule off.
     public static func resolve(
-        explicit: String?, currentDirectory: String, analyzedPaths: [String]
+        explicit: String?,
+        currentDirectory: String,
+        analyzedPaths: [String]
     ) throws(Failure) -> (configuration: Configuration, sources: SharedConfiguration.Resolved) {
         let resolved: SharedConfiguration.Resolved
         do {
             resolved = try SharedConfiguration.resolve(
-                for: sharedReading, explicit: explicit, currentDirectory: currentDirectory, analyzedPaths: analyzedPaths
+                for: sharedReading,
+                explicit: explicit,
+                currentDirectory: currentDirectory,
+                analyzedPaths: analyzedPaths
             )
         } catch .unreadable(let path, let reason) {
             throw .unreadable(path: path, reason: reason)
@@ -239,7 +264,9 @@ public struct Configuration: Codable, Sendable, Equatable {
     public static func load(from path: String) throws(Failure) -> Configuration {
         guard FileManager.default.fileExists(atPath: path) else { return .default }
         return try resolve(
-            explicit: path, currentDirectory: FileManager.default.currentDirectoryPath, analyzedPaths: []
+            explicit: path,
+            currentDirectory: FileManager.default.currentDirectoryPath,
+            analyzedPaths: []
         ).configuration
     }
 

@@ -20,7 +20,8 @@ import Testing
         #expect(
             lines.first?.hasSuffix(
                 ":2:2: warning: [leak-on-exit] the file descriptor `d` acquired here is not closed, handed on or returned when the function throws at line 3"
-            ) == true)
+            ) == true
+        )
         #expect(lines.dropFirst().allSatisfy { $0.contains(": note: ") })
         #expect(lines[0].hasPrefix(root.hasPrefix("/private") ? root : root) || lines[0].contains("T.swift"))
     }
@@ -40,7 +41,8 @@ import Testing
         let first = try #require((object["findings"] as? [[String: Any]])?.first)
         #expect(
             first["rule"] as? String == "leak-on-exit" && first["evidence"] as? String == "L0"
-                && first["shape"] as? String == "pairing")
+                && first["shape"] as? String == "pairing"
+        )
         let moved = try await withCorpus(["Sources/T.swift": source]) { other in
             try await Analyzer().analyze(paths: [other + "/Sources/T.swift"], cache: nil)
         }
@@ -48,7 +50,9 @@ import Testing
         #expect(
             result.findings[0].fingerprint(root: root)
                 == moved.findings[0].fingerprint(
-                    root: moved.findings[0].path.replacingOccurrences(of: "/Sources/T.swift", with: "")))
+                    root: moved.findings[0].path.replacingOccurrences(of: "/Sources/T.swift", with: "")
+                )
+        )
     }
 
     @Test func `the sarif log has the rule catalogue, columns, and the witness as a code flow`() async throws {
@@ -59,7 +63,8 @@ import Testing
         let run = try #require((log["runs"] as? [[String: Any]])?.first)
         #expect(run["columnKind"] as? String == "utf16CodeUnits")
         let rules = try #require(
-            ((run["tool"] as? [String: Any])?["driver"] as? [String: Any])?["rules"] as? [[String: Any]])
+            ((run["tool"] as? [String: Any])?["driver"] as? [String: Any])?["rules"] as? [[String: Any]]
+        )
         #expect(Set(rules.compactMap { $0["id"] as? String }) == Set(RuleID.allCases.map(\.rawValue)))
         let result0 = try #require((run["results"] as? [[String: Any]])?.first)
         #expect(result0["ruleId"] as? String == "leak-on-exit" && result0["level"] as? String == "warning")
@@ -73,10 +78,15 @@ import Testing
         try await withCorpus(["Sources/T.swift": source]) { root in
             let result = try await Analyzer().analyze(paths: [root + "/Sources/T.swift"], cache: nil)
             let text = try ReportFormatter.render(
-                result, format: .sarif, root: nil, relativeTo: SourcePath.canonical(root))
+                result,
+                format: .sarif,
+                root: nil,
+                relativeTo: SourcePath.canonical(root)
+            )
             let log = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
             let finding = try #require(
-                ((log["runs"] as? [[String: Any]])?.first?["results"] as? [[String: Any]])?.first)
+                ((log["runs"] as? [[String: Any]])?.first?["results"] as? [[String: Any]])?.first
+            )
             var locations = (finding["locations"] as? [[String: Any]]) ?? []
             for flow in (finding["codeFlows"] as? [[String: Any]]) ?? [] {
                 for thread in (flow["threadFlows"] as? [[String: Any]]) ?? [] {

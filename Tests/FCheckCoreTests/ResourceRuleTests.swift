@@ -18,7 +18,8 @@ import Testing
                     close(d)
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.rule == .leakOnExit && found.line == 2 && found.function == "f(_:)")
         #expect(found.message.contains("`d`") && found.message.contains("throws at line 4"))
         #expect(found.witness.map(\.line) == [2, 3, 4])
@@ -32,7 +33,8 @@ import Testing
                 do { try work() } catch let error { print(error) }
                 close(d)
             }
-            """)
+            """
+        )
         #expect(found.isEmpty, "\(found.map(\.message))")
     }
 
@@ -46,7 +48,8 @@ import Testing
                     close(d)
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.line == 2 && found.message.contains("throws at line 3"))
     }
 
@@ -61,7 +64,8 @@ import Testing
                     try work()
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a descriptor that failed to open is not held on the branch that checked it`() {
@@ -75,7 +79,8 @@ import Testing
                     return 1
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
         #expect(
             leaks(
                 """
@@ -85,7 +90,8 @@ import Testing
                     return d
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a close on only one branch leaves the other leaking`() throws {
@@ -100,7 +106,8 @@ import Testing
                     other()
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("reaches its end"))
     }
 
@@ -117,7 +124,8 @@ import Testing
                     close(d)
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `closing with the method form, with try question mark, counts`() {
@@ -133,13 +141,16 @@ import Testing
                     try d.close()
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `handing it to a call, storing it, or returning it ends the obligation`() {
         for use in ["return Box(d)", "self.fd = d", "register(d)", "return d", "return (d, 1)", "list.append(d)"] {
             #expect(
-                leaks("func f(_ p: String) throws -> Any {\n let d = open(p, O_RDONLY)\n \(use)\n}").isEmpty, "\(use)")
+                leaks("func f(_ p: String) throws -> Any {\n let d = open(p, O_RDONLY)\n \(use)\n}").isEmpty,
+                "\(use)"
+            )
         }
     }
 
@@ -154,7 +165,8 @@ import Testing
                     flushAll(d)
                 }
                 """
-            ).count == 1)
+            ).count == 1
+        )
     }
 
     @Test func `a bare call to a method the file declares is not the system call`() {
@@ -170,7 +182,8 @@ import Testing
                     }
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a call with too few arguments is not open(2)`() {
@@ -186,7 +199,8 @@ import Testing
                     other()
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.line == 2)
         #expect(
             leaks(
@@ -197,7 +211,8 @@ import Testing
                     other()
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `an acquisition inside a closure the statement runs is the statement's`() throws {
@@ -209,7 +224,8 @@ import Testing
                     try work()
                 }
                 """
-            ).first)
+            ).first
+        )
         #expect(found.message.contains("`d`"))
     }
 
@@ -222,7 +238,8 @@ import Testing
                     defer { _ = try? d.close() }
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `a resource of the project is configured by name`() throws {
@@ -233,15 +250,19 @@ import Testing
         #expect(try #require(leaks(source, configuration: configuration).first).message.contains("socket"))
         #expect(
             leaks("func f() throws {\n let s = makeSocket()\n try work()\n destroy(s)\n}", configuration: configuration)
-                .count == 1)
+                .count == 1
+        )
         #expect(leaks("func f() {\n let s = makeSocket()\n destroy(s)\n}", configuration: configuration).isEmpty)
     }
 
     @Test func `a function that returns what it acquired is an acquirer`() {
         let result = Analyzer().analyze(
             bytes: Array(
-                "func make(_ p: String) -> Int32 {\n let d = open(p, O_RDONLY)\n return d\n}\nfunc plain() {}".utf8),
-            path: "T.swift", acquirers: [])
+                "func make(_ p: String) -> Int32 {\n let d = open(p, O_RDONLY)\n return d\n}\nfunc plain() {}".utf8
+            ),
+            path: "T.swift",
+            acquirers: []
+        )
         #expect(result.acquirers == ["make#1-1"])
         #expect(result.findings.isEmpty)
     }
@@ -249,8 +270,11 @@ import Testing
     @Test func `a function returning an acquisition directly is an acquirer`() {
         let result = Analyzer().analyze(
             bytes: Array(
-                "func make(_ p: FilePath) -> FileDescriptor? {\n return try? FileDescriptor.open(p, .readOnly)\n}".utf8),
-            path: "T.swift", acquirers: [])
+                "func make(_ p: FilePath) -> FileDescriptor? {\n return try? FileDescriptor.open(p, .readOnly)\n}".utf8
+            ),
+            path: "T.swift",
+            acquirers: []
+        )
         #expect(result.acquirers == ["make#1-1"])
     }
 
@@ -263,7 +287,9 @@ import Testing
         ]
         try await withCorpus(files) { root in
             let report = try await Analyzer().analyze(
-                paths: files.keys.map { root + "/" + $0 }, cache: nil)
+                paths: files.keys.map { root + "/" + $0 },
+                cache: nil
+            )
             #expect(report.findings.map { URL(fileURLWithPath: $0.path).lastPathComponent } == ["Leaky.swift"])
             #expect(report.findings.first?.function == "leaky()")
         }
@@ -281,7 +307,8 @@ import Testing
                     }
                 }
                 """
-            ).isEmpty)
+            ).isEmpty
+        )
     }
 
     @Test func `an early return in a loop leaks what the iteration opened`() {
@@ -298,6 +325,7 @@ import Testing
                     return false
                 }
                 """
-            ).count == 1)
+            ).count == 1
+        )
     }
 }

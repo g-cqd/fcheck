@@ -40,7 +40,11 @@ public struct Directive: Codable, Sendable, Equatable {
             return nil
         }
         return Self(
-            rules: directive.rules, kind: Kind(shared: directive.kind), line: directive.line, reason: directive.reason)
+            rules: directive.rules,
+            kind: Kind(shared: directive.kind),
+            line: directive.line,
+            reason: directive.reason
+        )
     }
 
     private static let grammar = DirectiveGrammar(namespaces: namespaces)

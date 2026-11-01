@@ -39,15 +39,22 @@ struct DecodeCutRule {
             let line = unit.line(of: decode.node)
             findings.append(
                 Finding(
-                    rule: .cutThenDecode, severity: severity, path: unit.path, line: line,
-                    column: unit.column(of: decode.node), function: unit.name,
+                    rule: .cutThenDecode,
+                    severity: severity,
+                    path: unit.path,
+                    line: line,
+                    column: unit.column(of: decode.node),
+                    function: unit.name,
                     message: form.message(operation: cut.operation, line: cut.line),
                     witness: [
                         Finding.Step(line: cut.line, text: cut.text),
                         Finding.Step(
                             line: line,
-                            text: decode.node.trimmedDescription.split(separator: "\n").first.map(String.init) ?? ""),
-                    ]))
+                            text: decode.node.trimmedDescription.split(separator: "\n").first.map(String.init) ?? ""
+                        ),
+                    ]
+                )
+            )
         }
         return findings
     }
@@ -113,8 +120,11 @@ struct DecodeCutRule {
     }
 
     private func cut(
-        in expression: ExprSyntax, locals: [String: [ExprSyntax]], members: [String: [MemberDefinitions.Definition]],
-        unit: FunctionUnit, hops: Int
+        in expression: ExprSyntax,
+        locals: [String: [ExprSyntax]],
+        members: [String: [MemberDefinitions.Definition]],
+        unit: FunctionUnit,
+        hops: Int
     ) -> Cut? {
         let scan = CutScanner()
         // A value that went through a call that is not a view of the same bytes may have been cut at a boundary.
@@ -126,8 +136,10 @@ struct DecodeCutRule {
         scan.walk(expression)
         if let operation = scan.operation {
             return Cut(
-                operation: operation, line: unit.line(of: expression),
-                text: expression.trimmedDescription.split(separator: "\n").first.map(String.init) ?? "")
+                operation: operation,
+                line: unit.line(of: expression),
+                text: expression.trimmedDescription.split(separator: "\n").first.map(String.init) ?? ""
+            )
         }
         guard hops < Self.maximumHops else { return nil }
         for name in scan.names {
@@ -139,8 +151,12 @@ struct DecodeCutRule {
             for definition in members[name] ?? [] {
                 let inner = Self.table(AssignmentFinder.assignments(in: definition.statements))
                 if let found = cut(
-                    in: definition.expression, locals: inner, members: members, unit: unit, hops: hops + 1)
-                {
+                    in: definition.expression,
+                    locals: inner,
+                    members: members,
+                    unit: unit,
+                    hops: hops + 1
+                ) {
                     return found
                 }
             }
