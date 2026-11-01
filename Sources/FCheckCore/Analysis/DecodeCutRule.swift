@@ -10,7 +10,6 @@ import SwiftSyntax
 /// boundary, and so is a function that handles UTF-8 boundaries itself (it names a continuation-byte mask, or validates).
 /// A range slice is not followed: its bounds are usually where a scan stopped, not a count.
 struct DecodeCutRule {
-    private static let cuts: Set<String> = ["prefix", "suffix", "dropFirst", "dropLast"]
     private static let boundaryHandling = [
         "0x80", "0xC0", "0xBF", "0b10", "isContinuation", "unicodeScalars", "validatingUTF8", "String(validating",
     ]
