@@ -101,6 +101,25 @@ import Testing
         #expect(found(source, .replaceNotDurable).isEmpty)
     }
 
+    @Test func `a method of the program's own that is called replaceItem is not a rename`() {
+        let source = """
+            func update(_ session: Session) {
+                replaceItem(withId: session.id, with: session)
+            }
+            """
+        #expect(found(source, .replaceNotDurable).isEmpty)
+    }
+
+    @Test func `the older replaceItem(at:withItemAt:) over unflushed bytes is a rename that is not durable`() {
+        let source = """
+            func save(_ data: Data, _ tmp: URL, _ dst: URL) throws {
+                try data.write(to: tmp)
+                try FileManager.default.replaceItem(at: dst, withItemAt: tmp, backupItemName: nil, options: [], resultingItemURL: nil)
+            }
+            """
+        #expect(found(source, .replaceNotDurable).count >= 1)
+    }
+
     // MARK: - cut-then-decode
 
     @Test func `a utf16 view cut at a count and turned back into a string is reported`() throws {

@@ -51,6 +51,17 @@ struct CallSite {
                     + specialized.genericArgumentClause.trimmedDescription.filter { !$0.isWhitespace }
             ]
         }
+        // `device?.lock()` and `device!.lock()`: the receiver's name with its mark, `device?`.
+        if let chained = expression.as(OptionalChainingExprSyntax.self),
+            let names = dottedNames(chained.expression), let last = names.last
+        {
+            return names.dropLast() + [last + "?"]
+        }
+        if let forced = expression.as(ForceUnwrapExprSyntax.self),
+            let names = dottedNames(forced.expression), let last = names.last
+        {
+            return names.dropLast() + [last + "!"]
+        }
         guard let access = expression.as(MemberAccessExprSyntax.self) else { return nil }
         let name = access.declName.baseName.text
         guard let base = access.base else { return ["", name] }

@@ -18,6 +18,13 @@ struct DurabilityRule {
     private static let renames: Set<String> = [
         "rename", "Darwin.rename", "Glibc.rename", "renamex_np", "Darwin.renamex_np", "renameat", "Darwin.renameat",
     ]
+    /// Foundation's replacing renames: `replaceItemAt(_:withItemAt:)`, and the older `replaceItem(at:withItemAt:…)`, told
+    /// from a method of the program's own by its `withItemAt` label.
+    private static func isRename(_ call: CallSite) -> Bool {
+        renames.contains(call.callee) || call.last == "replaceItemAt"
+            || (call.last == "replaceItem" && call.arguments.contains { $0.label == "withItemAt" })
+    }
+
     private static let writes: Set<String> = [
         "write", "writeAll", "pwrite", "pwritev", "writev", "createFile", "fwrite", "fputs",
     ]
@@ -48,7 +55,7 @@ struct DurabilityRule {
     }
 
     func analyze(_ unit: FunctionUnit) -> [Finding] {
-        guard CallFinder.calls(in: unit.statements).contains(where: { Self.renames.contains($0.callee) }) else {
+        guard CallFinder.calls(in: unit.statements).contains(where: Self.isRename) else {
             return []
         }
         let graph = ControlFlowGraph.build(statements: unit.statements, converter: unit.converter)
@@ -83,7 +90,7 @@ struct DurabilityRule {
         guard let syntax = node.syntax else { return [] }
         var events: [Event] = []
         for call in CallFinder.calls(in: syntax).sorted(by: { $0.node.endPosition < $1.node.endPosition }) {
-            if Self.renames.contains(call.callee) {
+            if Self.isRename(call) {
                 events.append(.rename(successOn: node.kind == .condition ? Self.successEdge(of: call) : nil))
             } else if let directory = flushTarget(call, directories: directories) {
                 events.append(.flush(directory: directory))
