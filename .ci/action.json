@@ -1,0 +1,32 @@
+{
+  "swift": {
+    "parallel": false
+  },
+  "quality": {
+    "paths": [
+      "Sources"
+    ],
+    "include": [
+      "Package.swift",
+      "Sources/**",
+      "Tests/FCheckCoreTests/*.swift"
+    ]
+  },
+  "release": {
+    "executables": [
+      "fcheck"
+    ]
+  },
+  "commands": [
+    {
+      "id": "no-gcd",
+      "run": "Scripts/no-gcd.sh",
+      "after": "quality"
+    },
+    {
+      "id": "self-analysis",
+      "run": "swift run fcheck analyze Sources --strict --no-cache",
+      "after": "linux-debug"
+    }
+  ]
+}
