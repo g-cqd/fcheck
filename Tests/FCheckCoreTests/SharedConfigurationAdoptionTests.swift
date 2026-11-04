@@ -87,13 +87,13 @@ import Testing
     @Test func `exclude from the shared top level, the tool's section and the tool's file add up`() throws {
         let shared = #"{"exclude": ["Sources/One/"], "fcheck": {"exclude": ["/Sources/Two/*.swift"]}, "deadwood": {}}"#
         let run = try Self.run([".swift-analyzers.json": shared, Self.ownFile: #"{"exclude": ["Three"]}"#])
-        #expect(run.status == 0)
+        #expect(run.status == 0, "status \(run.status): \(run.errors)")
         #expect(run.reported == 2, "Main and Four remain; got \(String(describing: run.reported))")
     }
 
     @Test func `run from a subdirectory, the project root's configuration is read`() throws {
         let run = try Self.run([".swift-analyzers.json": #"{"exclude": ["Sources/One/"]}"#], from: "Sources/Two")
-        #expect(run.status == 0 && run.reported == 4)
+        #expect(run.status == 0 && run.reported == 4, "status \(run.status): \(run.errors)")
     }
 
     @Test func `an unknown key fails with 78 and names the file and the key`() throws {
@@ -110,13 +110,16 @@ import Testing
 
     @Test func `another tool's section is not this tool's to check`() throws {
         let run = try Self.run([".swift-analyzers.json": #"{"deadwood": {"aKeyOnlyItKnows": true}}"#])
-        #expect(run.status == 0 && run.reported == 5)
+        #expect(run.status == 0 && run.reported == 5, "status \(run.status): \(run.errors)")
     }
 
     @Test func `includeRegions with test includes test code, as --include-tests does`() throws {
         let root = [".swift-analyzers.json": #"{"includeRegions": "test"}"#]
         let included = try Self.run(root.merging(["Sources/Tests/LeakTests.swift": ""]) { a, _ in a })
-        #expect(included.status == 0 && included.analyzedFileCount == 6)
+        #expect(
+            included.status == 0 && included.analyzedFileCount == 6,
+            "status \(included.status): \(included.errors)"
+        )
         let excluded = try Self.run(["Sources/Tests/LeakTests.swift": ""])
         #expect(excluded.analyzedFileCount == 5)
     }

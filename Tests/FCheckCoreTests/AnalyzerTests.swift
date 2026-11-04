@@ -2,6 +2,7 @@ import CorpusScan
 import FCheckCore
 import Foundation
 import ProjectModel
+import SourceCorpus
 import Testing
 
 @Suite struct AnalyzerTests {
@@ -78,11 +79,13 @@ import Testing
         #expect(analyze("func f( {{{\n" + leaking).count <= 1)
     }
 
-    @Test func `a body nested past any sane depth does not crash`() {
+    /// The tool walks a tree on a large stack (`LargeStack`); a test thread's stack is far smaller, and a release
+    /// build fills it with this nesting, so the walk runs on the stack the tool gives it.
+    @Test func `a body nested past any sane depth does not crash`() async {
         let source =
             "func f() {\n" + String(repeating: "if c {\n", count: 600) + " let d = open(p, 0)\n"
             + String(repeating: "}\n", count: 600) + "}"
-        _ = analyze(source)
+        _ = await LargeStack.run { analyze(source) }
     }
 }
 
