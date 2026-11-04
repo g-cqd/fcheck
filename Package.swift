@@ -71,6 +71,7 @@ let package = Package(
                 "FCheckCore",
                 .product(name: "SwiftParser", package: "swift-syntax"),
                 .product(name: "ProjectModel", package: "analyzerkit"),
+                .product(name: "SourceCorpus", package: "analyzerkit"),
             ],
             exclude: ["Goldens"],
             swiftSettings: strictSwiftSettings
