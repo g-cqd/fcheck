@@ -30,5 +30,10 @@
       "after": "linux-debug",
       "title": "Quality \u00b7 Self Analysis"
     }
+  ],
+  "localChecks": [
+    "quality",
+    "debug",
+    "self-analysis"
   ]
 }
