@@ -1,5 +1,6 @@
 import FCheckCore
 import Foundation
+import SourceCorpus
 import Testing
 
 /// The callee of a call is read from its tokens, so analysing a chain of calls costs time proportional to its length. A
@@ -12,18 +13,21 @@ import Testing
         "func f() {\n    let v = view" + String(repeating: ".modifier(1)", count: links) + "\n    print(v)\n}\n"
     }
 
-    /// The fastest of three runs, so a busy machine slows a run without failing the test.
-    private static func seconds(_ source: String) -> Double {
-        (0..<3).map { _ in
-            let clock = ContinuousClock()
-            let elapsed = clock.measure { _ = analyze(source) }
-            return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
-        }.min() ?? 0
+    /// The fastest of three runs, so a busy machine slows a run without failing the test. The runs are on the large stack
+    /// the tool gives its analysis: a sanitized debug build fills a test thread's stack with a chain this long.
+    private static func seconds(_ source: String) async -> Double {
+        await LargeStack.run {
+            (0..<3).map { _ in
+                let clock = ContinuousClock()
+                let elapsed = clock.measure { _ = analyze(source) }
+                return Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+            }.min() ?? 0
+        }
     }
 
-    @Test func `four times the chain costs about four times the time, not sixteen`() {
-        let short = Self.seconds(Self.chain(50))
-        let long = Self.seconds(Self.chain(200))
+    @Test func `four times the chain costs about four times the time, not sixteen`() async {
+        let short = await Self.seconds(Self.chain(50))
+        let long = await Self.seconds(Self.chain(200))
         #expect(long / short < 8, "50 links: \(short) s, 200 links: \(long) s, ratio \(long / short)")
     }
 }
