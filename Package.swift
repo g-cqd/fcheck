@@ -19,16 +19,16 @@ let package = Package(
         .executable(name: "fcheck", targets: ["fcheck"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "604.0.0"),
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
-        .package(url: "https://github.com/apple/swift-system.git", from: "1.8.1"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
+        .package(url: "https://github.com/apple/swift-system.git", exact: "1.8.1"),
         .package(
             url: "https://github.com/g-cqd/AemiJSON.git",
             revision: "33ee6739c071fb1e647fa2fd8c2587534cb0f00c"
         ),
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "cb3bce90930110980509460a59b902362caceacf"
+            revision: "59a2d2754194b78c0ff6de3be99724fc98ff4d2d"
         ),
     ],
     targets: [
