@@ -57,3 +57,9 @@ fcheck is one of a family of analyzers with the same options and reports:
 and [modeler](https://github.com/g-cqd/modeler).
 
 [MIT](LICENSE)
+
+## Contributing & Security
+
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [License](LICENSE)

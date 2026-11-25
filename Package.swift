@@ -1,9 +1,6 @@
 // swift-tools-version: 6.4
 import PackageDescription
 
-// Strict-by-default, as in the analyzers that share analyzerkit: warnings are errors, upcoming features are on,
-// and strict memory safety keeps the unsafe surface at zero. Swift 6 language mode includes complete strict
-// concurrency.
 let strictSwiftSettings: [SwiftSetting] = [
     .treatAllWarnings(as: .error),
     .enableUpcomingFeature("ExistentialAny"),
@@ -29,7 +26,6 @@ let package = Package(
             url: "https://github.com/g-cqd/AemiJSON.git",
             revision: "1c098f0456a2f86dee32dfd9b85455980216589f"
         ),
-        // The corpus scan, the control-flow graph and the report support the analyzers share.
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
             revision: "3b5d779d61e51a346fcb86c69ac3ab8ebcbdd6c0"
