@@ -24,11 +24,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-system.git", exact: "1.8.1"),
         .package(
             url: "https://github.com/g-cqd/AemiJSON.git",
-            revision: "fb4478051725c95614e76b15ac11e9a5c6a502a3"
+            revision: "b6aaf0127cc480b33090dc4564324b7abfdcb408"
         ),
         .package(
             url: "https://github.com/g-cqd/analyzerkit.git",
-            revision: "59ac36d3c267e997a24f47e62654e069bb1a7395"
+            revision: "24189b9702218589e19f5435dec28da884d489c0"
         ),
     ],
     targets: [
